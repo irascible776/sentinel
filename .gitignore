@@ -1,0 +1,52 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Hugging Face and PyTorch model caches
+.cache/
+hf_cache/
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.onnx
+
+# Database and SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment Variables & Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Logs
+*.log
+logs/
+
+# Node / Frontend (for dashboard/extension if expanded)
+node_modules/
+.next/
+dist/
+build/
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

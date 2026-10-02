@@ -143,29 +143,89 @@ flowchart LR
 
 ---
 
-## 5. Input and Output Specifications (Data Contracts)
+---
 
-### Contract 1: Ingress Request (User $\rightarrow$ Rupesh)
-Standard OpenAI-compatible JSON payload:
-* `session_id`: Unique identifier for the user's session.
-* `messages`: List of chat objects, each containing `role` (`"user"`, `"assistant"`, or `"system"`) and `content` (string text).
-* `stream`: Boolean (`true` for token-by-token streaming, `false` for complete response).
+## 5. Exact Inter-Module Linkage, Endpoints & Credentials
 
-### Contract 2: Gateway to Rohit's Engine (Rupesh $\rightarrow$ Rohit)
-Rupesh calls Rohit's internal analyzer:
-* `session_id`: String.
-* `prompt`: The latest user message string.
-* `timestamp`: Unix timestamp or ISO string.
+> [!IMPORTANT]
+> For the master integration specification across all 3 developers, see [System_Integration_and_Linkage_Specification.md](file:///home/utkarsh/Desktop/minor/plans/System_Integration_and_Linkage_Specification.md).
+> All configuration and credentials are read from `.env` (template in `.env.example`).
 
-### Contract 3: Blocked Response (Rupesh $\rightarrow$ User)
-If Rohit returns `BLOCK`, Rupesh returns HTTP status code `403`:
-* `error`: Object containing `code: "PROMPT_INJECTION_BLOCKED"`, `message: "Request rejected by AI Security Gateway"`, and `request_id`.
+### 5.1 Module-to-File Mapping
+| Rupesh's Module | File Location | Connected Developer / Target |
+|---|---|---|
+| Gateway App & Lifespan | `core/gateway/app.py` | Mounts Rohit's `JudgeAgent`, Utkarsh's `CanaryEngine` |
+| Settings & Config | `core/gateway/config.py` | Reads `.env` via `pydantic-settings` |
+| Database & ORM | `core/gateway/database.py` | SQLite `gateway.db` (consumed by Utkarsh's dashboard) |
+| Upstream Proxy Client | `core/gateway/proxy.py` | `httpx.AsyncClient` forwarding to OpenAI/Ollama |
+| Streaming Interceptor | `core/gateway/stream_interceptor.py` | Add-on 5 SSE sliding-window circuit breaker |
+| Response-Side DLP | `core/gateway/dlp.py` | Add-on 6 PII & Canary leak verification |
 
-### Contract 4: Successful Response (Rupesh $\rightarrow$ User)
-If clean, Rupesh returns standard OpenAI-compatible response:
-* `id`: Unique chat ID.
-* `choices`: Array containing the AI assistant's message content.
-* `security_metadata`: Gateway addition showing `risk_score` and `status: "VERIFIED_SAFE"`.
+---
+
+### 5.2 Connecting with Developer 1 (Rohit) & Developer 3 (Utkarsh)
+
+In `core/gateway/app.py`:
+```python
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from core.detection.judge import JudgeAgent              # Rohit's Module
+from core.security_vectors.canary import CanaryEngine   # Utkarsh's Module
+from core.gateway.database import init_db, log_request
+
+app = FastAPI(title="AI Security Gateway", version="1.0.0")
+
+# Critical for Utkarsh's Chrome Extension and Streamlit Dashboard:
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+judge = JudgeAgent()
+canary_engine = CanaryEngine()
+
+from contextlib import asynccontextmanager
+import httpx
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    app.state.http_client = httpx.AsyncClient(timeout=30.0)
+    yield
+    await app.state.http_client.aclose()
+
+app = FastAPI(title="AI Security Gateway", version="1.0.0", lifespan=lifespan)
+```
+
+---
+
+### 5.3 Exact Endpoints Rupesh Must Expose
+
+#### 1. Ingress Chat: `POST /v1/chat/completions`
+* **Port:** `8000`
+* **Flow:**
+  1. Extract latest user message.
+  2. Call `verdict = judge.evaluate(prompt=user_text, session_id=session_id)`.
+  3. If `verdict["decision"] == "BLOCK"`: return HTTP 403 with `{"error": {"code": "PROMPT_INJECTION_BLOCKED", "risk_score": verdict["risk_score"], "reasoning": verdict["reasoning"]}}`.
+  4. If `ALLOW`:
+     * Call `(messages, canary_token) = canary_engine.inject_into_prompt(messages, session_id)`.
+     * If `stream=True`: Return `StreamingResponse(stream_interceptor.stream(upstream_stream, canary_token))`.
+     * If `stream=False`: Await upstream response, run `dlp.scan(response, canary_token)`, return OpenAI JSON + `security_metadata`.
+  5. Log event to `gateway.db`.
+
+#### 2. Light Inspection: `POST /api/v1/inspect`
+* Used by Utkarsh's Chrome Extension and RAG Scanner.
+* Runs `judge.evaluate(prompt, session_id)` and returns JSON verdict without calling upstream LLM.
+
+#### 3. Telemetry Endpoints (Consumed by Utkarsh's Dashboard)
+* `GET /api/v1/stats`: Summary counts of total, allowed, flagged, blocked, canary leaks, and latency.
+* `GET /api/v1/events?limit=50&offset=0&verdict=BLOCK`: Paginated history from `requests` table.
+* `GET /api/v1/canary-alerts`: Exfiltration events from `security_events` table.
+* `GET /api/v1/rules`: Active signatures from `threat_rules.json`.
+* `POST /api/v1/threat-intel/run`: Calls Utkarsh's `ThreatIntelligenceFeed.run_clustering_and_update()`.
 
 ---
 

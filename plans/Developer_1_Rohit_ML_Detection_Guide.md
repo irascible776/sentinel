@@ -160,27 +160,60 @@ flowchart TD
 
 ---
 
-## 5. Input and Output Specifications (Data Contracts)
+## 5. Exact Inter-Module Linkage, Endpoints & Credentials
 
-To work seamlessly with Developer 2 (Rupesh), Rohit's module must adhere to a strict interface.
+> [!IMPORTANT]
+> For the master integration specification across all 3 developers, see [System_Integration_and_Linkage_Specification.md](file:///home/utkarsh/Desktop/minor/plans/System_Integration_and_Linkage_Specification.md).
+> All configuration and credentials are read from `.env` (template in `.env.example`).
 
-### Input Data Contract (What Developer 2 sends to Rohit)
-Developer 2 calls Rohit's detection module with this structure:
-* `session_id`: A unique string identifying the user or session.
-* `prompt`: The natural language text entered by the user.
-* `timestamp`: The exact time the request arrived.
+### 5.1 Module-to-File Mapping
+| Rohit's Module | File Location | Connected Developer / Target |
+|---|---|---|
+| Agent 1: Pattern Hunter | `core/detection/pattern_hunter.py` | Heuristics + dynamic reload of `threat_rules.json` (from Utkarsh) |
+| Agent 2: Semantic Analyst | `core/detection/semantic_analyst.py` | Hugging Face pipeline (`protectai/deberta-v3-base-prompt-injection-v2`) |
+| Agent 3: Behavioral Profiler | `core/detection/behavioral_profiler.py` | In-memory sliding-window session tracker |
+| Agent 4: Judge Agent | `core/detection/judge.py` | Imported directly by Rupesh (`core/gateway/app.py`) & Utkarsh (`core/security_vectors/rag_scanner.py`) |
+| Dynamic Threat Signatures | `core/detection/threat_rules.json` | Updated by Utkarsh's Threat Feed (`core/security_vectors/threat_feed.py`) |
 
-### Output Data Contract (What Rohit sends back to Developer 2)
-Rohit's module returns a structured response containing:
-* `decision`: Exactly one of `"ALLOW"`, `"FLAG"`, or `"BLOCK"`.
-* `risk_score`: A decimal number between `0.0` and `100.0`.
-* `confidence`: A confidence rating between `0.0` and `1.0`.
-* `agent_breakdown`:
-  * `pattern_hunter_score`: Score from Agent 1 (0 to 100).
-  * `semantic_analyst_score`: Score from Agent 2 (0 to 100).
-  * `behavioral_profiler_score`: Score from Agent 3 (0 to 100).
-* `matched_signatures`: A list of any specific attack patterns triggered.
-* `reasoning`: A human-readable sentence explaining the verdict.
+---
+
+### 5.2 Exact Class Signatures for Integration
+
+#### `JudgeAgent` (`core/detection/judge.py`)
+This is the master entrypoint that Developer 2 (Rupesh) and Developer 3 (Utkarsh) import and invoke:
+
+```python
+from typing import Dict, List, Any
+
+class JudgeAgent:
+    def __init__(self, threat_rules_path: str = "core/detection/threat_rules.json"):
+        """Initializes PatternHunter, SemanticAnalyst, and BehavioralProfiler."""
+        pass
+
+    def evaluate(self, prompt: str, session_id: str = "default") -> Dict[str, Any]:
+        """
+        Synchronous/in-process evaluation of a prompt.
+        
+        Returns:
+            {
+                "decision": "ALLOW" | "FLAG" | "BLOCK",
+                "risk_score": float,        # 0.0 to 100.0
+                "confidence": float,        # 0.0 to 1.0
+                "agent_breakdown": {
+                    "pattern_hunter_score": float,     # 0.0 to 100.0
+                    "semantic_analyst_score": float,   # 0.0 to 100.0
+                    "behavioral_profiler_score": float # 0.0 to 100.0
+                },
+                "matched_signatures": List[str],       # e.g. ["DAN_V1", "BASE64_OBFUSCATION"]
+                "reasoning": str                       # Human-readable explanation
+            }
+        """
+        pass
+```
+
+#### Shared Contract with Utkarsh (Add-on 12: Threat Rules Reload)
+* `core/detection/pattern_hunter.py` must track `os.path.getmtime("core/detection/threat_rules.json")`.
+* When Utkarsh's `ThreatIntelligenceFeed` updates `threat_rules.json`, `PatternHunter` reloads the regex rule list on the next prompt evaluation without restarting the server.
 
 ---
 
@@ -211,11 +244,11 @@ flowchart LR
 
 ### Topic 2: Pre-Trained Transformers & Hugging Face (Building Agent 2)
 * **Concept:** Understanding how modern AI processes text. Text is split into tokens, converted into vectors (embeddings), and evaluated by a neural network.
-* **Key Terms to Understand:**
-  * Pre-trained model: A model already trained on millions of texts that you can download and use for free.
-  * Tokenizer: The tool that breaks a sentence into pieces the model understands.
-  * Pipeline: Hugging Face’s simple interface to run a model in just 3 lines of Python.
-  * Recommended Model to Research: `protectai/deberta-v3-base-prompt-injection-v2` or `fmops/distilbert-prompt-injection`.
+* **Key Terms & Mandatory Gotchas:**
+  * Pre-trained model: Recommended model: `protectai/deberta-v3-base-prompt-injection-v2`.
+  * **Critical Label Rule:** Model returns `LABEL_1` for attacks (Risk = `score * 100`) and `LABEL_0` for clean prompts (Risk = `(1.0 - score) * 100`). You must invert `LABEL_0` to avoid false alarms!
+  * **Mandatory Truncation:** Must initialize and call with `truncation=True, max_length=512`. Prompts exceeding 512 tokens without truncation will throw fatal PyTorch tensor errors.
+  * Tokenizer & Pipeline: `pipeline("text-classification", model="...", truncation=True, max_length=512)`.
 * **Self-Study Search Queries:**
   * YouTube: `"Hugging Face tutorial for beginners Krish Naik"`
   * YouTube: `"What is a Transformer model in machine learning 3Blue1Brown"`

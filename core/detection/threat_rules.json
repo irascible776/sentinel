@@ -1,34 +1,48 @@
 {
-  "version": "1.0.0",
-  "updated_at": "2026-10-02T16:51:00Z",
+  "version": "1.2.0",
+  "updated_at": "2026-10-03T15:28:00Z",
   "rules": [
     {
       "id": "SIG-001",
       "name": "Direct Instruction Override",
-      "pattern": "(?i)(ignore\\s+all\\s+(previous|prior)\\s+instructions|disregard\\s+all\\s+rules)",
+      "pattern": "(?i)(ignore\\s+all\\s+(previous|prior|system)?\\s*(instructions|rules|guidelines)|disregard\\s+all\\s+rules)",
       "severity": "HIGH",
       "weight": 100
     },
     {
       "id": "SIG-002",
-      "name": "DAN Persona Jailbreak",
-      "pattern": "(?i)(you\\s+are\\s+now\\s+DAN|do\\s+anything\\s+now|developer\\s+mode\\s+enabled)",
+      "name": "DAN Persona & Developer Mode Jailbreak",
+      "pattern": "(?i)(you\\s+are\\s+now\\s+DAN|do\\s+anything\\s+now|developer\\s+(mode|environment)|jailbreak\\s+mode|safety\\s+guardrails?\\s+(are\\s+)?disabled)",
       "severity": "HIGH",
       "weight": 95
     },
     {
       "id": "SIG-003",
       "name": "System Prompt Extraction",
-      "pattern": "(?i)(repeat\\s+the\\s+words\\s+above|print\\s+initial\\s+system\\s+prompt|what\\s+are\\s+your\\s+instructions)",
+      "pattern": "(?i)(repeat\\s+the\\s+words\\s+above|print\\s+initial\\s+system\\s+prompt|what\\s+are\\s+your\\s+instructions|system\\s+prompt\\s+header)",
       "severity": "MEDIUM",
       "weight": 80
     },
     {
       "id": "SIG-004",
       "name": "Roleplay Configuration Exfiltration",
-      "pattern": "(?i)(pretend\\s+to\\s+be\\s+an?\\s+unfiltered|simulate\\s+a\\s+terminal\\s+with\\s+root)",
+      "pattern": "(?i)(pretend\\s+to\\s+be\\s+an?\\s+unfiltered|simulate\\s+a\\s+terminal\\s+with\\s+root|roleplaying\\s+as\\s+a\\s+jailbroken)",
       "severity": "MEDIUM",
       "weight": 75
+    },
+    {
+      "id": "SIG-005",
+      "name": "Delimiter Instruction Injection",
+      "pattern": "(?i)(###\\s*instruction\\s*override|system\\s*override\\s*:|---+\\s*new\\s+instruction)",
+      "severity": "HIGH",
+      "weight": 90
+    },
+    {
+      "id": "SIG-006",
+      "name": "Canary & Secret Key Harvesting",
+      "pattern": "(?i)(secret\\s+canary\\s+token|reveal\\s+confidential\\s+key|dump\\s+canary|master\\s+api\\s+keys)",
+      "severity": "HIGH",
+      "weight": 85
     }
   ]
 }

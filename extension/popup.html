@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DTU AI Security Gateway</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --danger: #ef4444;
+      --success: #10b981;
+      --border: #334155;
+    }
+    body {
+      width: 300px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      padding: 16px;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .header h1 {
+      font-size: 15px;
+      margin: 0;
+      color: var(--primary);
+    }
+    .header span {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .status-card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .online .dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .offline .dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .stat-val {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+    .footer {
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="font-size: 20px;">🛡️</div>
+    <div>
+      <h1>AI Security Gateway</h1>
+      <span>Group 138 | IT401 Minor Project</span>
+    </div>
+  </div>
+
+  <div class="status-card" id="statusCard">
+    <div class="status-indicator" id="statusIndicator">
+      <span class="dot"></span>
+      <span id="statusText">Checking Gateway...</span>
+    </div>
+    <div id="statsSection" style="display: none;">
+      <div class="stat-row">
+        <span>Prompts Analyzed:</span>
+        <span class="stat-val" id="totalPrompts">0</span>
+      </div>
+      <div class="stat-row">
+        <span>Threats Blocked:</span>
+        <span class="stat-val" id="blockedPrompts" style="color: var(--danger);">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Protected URLs: ChatGPT • Claude • Web AI
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -110,7 +110,10 @@ def fallback_stats():
         canary_count = 0
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='security_events'")
         if cursor.fetchone():
-            c_row = cursor.execute("SELECT COUNT(*) FROM security_events WHERE event_type='CANARY_EXFILTRATION'").fetchone()
+            c_row = cursor.execute("""
+                SELECT COUNT(*) FROM security_events 
+                WHERE event_type IN ('CANARY_EXFILTRATION', 'STREAM_CIRCUIT_BREAKER', 'DATA_EXFILTRATION_PREVENTED')
+            """).fetchone()
             if c_row:
                 canary_count = c_row[0]
 
@@ -138,33 +141,75 @@ def fallback_events(limit: int = 50):
         if not cursor.fetchone():
             conn.close()
             return []
-        cursor.execute("""
-            SELECT id, session_id, prompt, decision, risk_score, matched_signatures, reasoning, timestamp, latency_ms
-            FROM requests
-            ORDER BY timestamp DESC
-            LIMIT ?
-        """, (limit,))
-        rows = cursor.fetchall()
+
+        cursor.execute("PRAGMA table_info(requests)")
+        cols = [c[1] for c in cursor.fetchall()]
+        has_sigs = "matched_signatures" in cols
+
+        if has_sigs:
+            cursor.execute("""
+                SELECT id, session_id, prompt, decision, risk_score, matched_signatures, reasoning, timestamp, latency_ms, agent_breakdown
+                FROM requests
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            events = []
+            for r in rows:
+                sigs = []
+                if r[5]:
+                    try:
+                        sigs = json.loads(r[5]) if isinstance(r[5], str) else r[5]
+                    except Exception:
+                        sigs = [str(r[5])]
+                breakdown = {}
+                if r[9]:
+                    try:
+                        breakdown = json.loads(r[9]) if isinstance(r[9], str) else r[9]
+                    except Exception:
+                        pass
+                events.append({
+                    "id": r[0],
+                    "session_id": r[1] or "default",
+                    "prompt": r[2] or "",
+                    "decision": r[3] or "UNKNOWN",
+                    "risk_score": float(r[4] or 0.0),
+                    "matched_signatures": sigs,
+                    "reasoning": r[6] or "",
+                    "timestamp": r[7] or "",
+                    "latency_ms": float(r[8] or 0.0),
+                    "agent_breakdown": breakdown
+                })
+        else:
+            cursor.execute("""
+                SELECT id, session_id, prompt, decision, risk_score, reasoning, timestamp, latency_ms, agent_breakdown
+                FROM requests
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            events = []
+            for r in rows:
+                breakdown = {}
+                if r[8]:
+                    try:
+                        breakdown = json.loads(r[8]) if isinstance(r[8], str) else r[8]
+                    except Exception:
+                        pass
+                events.append({
+                    "id": r[0],
+                    "session_id": r[1] or "default",
+                    "prompt": r[2] or "",
+                    "decision": r[3] or "UNKNOWN",
+                    "risk_score": float(r[4] or 0.0),
+                    "matched_signatures": [],
+                    "reasoning": r[5] or "",
+                    "timestamp": r[6] or "",
+                    "latency_ms": float(r[7] or 0.0),
+                    "agent_breakdown": breakdown
+                })
+
         conn.close()
-        events = []
-        for r in rows:
-            sigs = []
-            if r[5]:
-                try:
-                    sigs = json.loads(r[5]) if isinstance(r[5], str) else r[5]
-                except Exception:
-                    sigs = [str(r[5])]
-            events.append({
-                "id": r[0],
-                "session_id": r[1] or "default",
-                "prompt": r[2] or "",
-                "decision": r[3] or "UNKNOWN",
-                "risk_score": float(r[4] or 0.0),
-                "matched_signatures": sigs,
-                "reasoning": r[6] or "",
-                "timestamp": r[7] or "",
-                "latency_ms": float(r[8] or 0.0)
-            })
         return events
     except Exception:
         return []
@@ -182,7 +227,43 @@ else:
     st.sidebar.warning("🟡 Gateway API: Offline (Direct DB Fallback Active)")
 
 # High Visibility Canary Alert Banner
-canary_alerts = safe_get("/api/v1/canary-alerts") or []
+canary_alerts = safe_get("/api/v1/canary-alerts")
+if canary_alerts is None:
+    canary_alerts = []
+    if os.path.exists(DB_PATH):
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='security_events'")
+            if cursor.fetchone():
+                cursor.execute("""
+                    SELECT id, session_id, timestamp, event_type, severity, details
+                    FROM security_events
+                    WHERE event_type IN ('CANARY_EXFILTRATION', 'STREAM_CIRCUIT_BREAKER', 'DATA_EXFILTRATION_PREVENTED')
+                    ORDER BY timestamp DESC LIMIT 5
+                """)
+                for row in cursor.fetchall():
+                    dt = {}
+                    if row[5]:
+                        try:
+                            dt = json.loads(row[5])
+                        except Exception:
+                            pass
+                    token = dt.get("canary_token") or dt.get("token") or "CANARY-SECRET-DETECTED"
+                    action = dt.get("action_taken") or ("STREAM_TERMINATED" if row[3] == "STREAM_CIRCUIT_BREAKER" else "RESPONSE_REDACTED")
+                    canary_alerts.append({
+                        "id": row[0],
+                        "session_id": row[1],
+                        "timestamp": row[2],
+                        "event_type": row[3],
+                        "severity": row[4],
+                        "canary_token": token,
+                        "action_taken": action,
+                        "details": dt
+                    })
+            conn.close()
+        except Exception:
+            pass
 if canary_alerts:
     for a in canary_alerts[:3]:
         st.error(
@@ -190,7 +271,7 @@ if canary_alerts:
             f"• **Session ID:** `{a.get('session_id', 'N/A')}`\n\n"
             f"• **Leaked Token:** `{a.get('canary_token', 'N/A')}`\n\n"
             f"• **Timestamp:** `{a.get('timestamp', 'N/A')}`\n\n"
-            f"• **Automated Countermeasure:** `STREAM_TERMINATED / HTTP 403 FORBIDDEN`"
+            f"• **Automated Countermeasure:** `{a.get('action_taken', 'STREAM_TERMINATED / HTTP 403 FORBIDDEN')}`"
         )
 
 # ── Executive Telemetry Cards

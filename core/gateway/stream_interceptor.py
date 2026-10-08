@@ -49,7 +49,11 @@ async def stream_interceptor(upstream_stream, canary_token: str, session_id: str
                                     session_id=session_id,
                                     event_type="STREAM_CIRCUIT_BREAKER",
                                     severity="CRITICAL",
-                                    details={"reason": "Canary token or sensitive secret detected in stream"},
+                                    details={
+                                        "reason": "Canary token or sensitive secret detected in stream",
+                                        "canary_token": canary_token,
+                                        "action_taken": "STREAM_TERMINATED"
+                                    },
                                     request_id=request_id
                                 )
                                 # Send termination payload
@@ -61,9 +65,13 @@ async def stream_interceptor(upstream_stream, canary_token: str, session_id: str
             
             # Yield the original line if no leak detected
             if isinstance(line, str):
-                yield (line + "\n").encode('utf-8')
+                cleaned = line.rstrip("\r\n")
+                if cleaned:
+                    yield f"{cleaned}\n\n".encode("utf-8")
             else:
-                yield line + b"\n"
+                cleaned = line.rstrip(b"\r\n")
+                if cleaned:
+                    yield cleaned + b"\n\n"
     
     finally:
         if is_httpx_response:

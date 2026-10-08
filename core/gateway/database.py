@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, event, Column, String, Float, Boolean, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -20,13 +20,14 @@ class RequestLog(Base):
 
     id = Column(String(64), primary_key=True, default=lambda: f"req-{uuid.uuid4().hex[:12]}")
     session_id = Column(String(64), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     prompt = Column(Text, nullable=False)
     response = Column(Text, nullable=True)
     decision = Column(String(16), nullable=False, index=True) # 'ALLOW', 'FLAG', 'BLOCK'
     risk_score = Column(Float, nullable=False)
     latency_ms = Column(Float, nullable=False)
     agent_breakdown = Column(Text, nullable=False) # Store JSON string
+    matched_signatures = Column(Text, nullable=True, default="[]") # Store JSON list
     reasoning = Column(Text, nullable=False)
     is_stream = Column(Boolean, default=False)
 
@@ -36,7 +37,7 @@ class SecurityEvent(Base):
     id = Column(String(64), primary_key=True, default=lambda: f"evt-{uuid.uuid4().hex[:12]}")
     request_id = Column(String(64), nullable=True)
     session_id = Column(String(64), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     event_type = Column(String(32), nullable=False, index=True) # 'PROMPT_INJECTION', 'CANARY_EXFILTRATION', 'PII_LEAK'
     severity = Column(String(16), nullable=False) # 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
     details = Column(Text, nullable=False) # Store JSON string
@@ -46,7 +47,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     Base.metadata.create_all(bind=engine)
 
-def log_request(session_id: str, prompt: str, response: str, decision: str, risk_score: float, latency_ms: float, agent_breakdown: dict, reasoning: str, is_stream: bool = False) -> str:
+# Auto-initialize database schema on import so tables always exist
+init_db()
+
+def log_request(session_id: str, prompt: str, response: str, decision: str, risk_score: float, latency_ms: float, agent_breakdown: dict, reasoning: str, is_stream: bool = False, matched_signatures: list = None) -> str:
     db = SessionLocal()
     try:
         req = RequestLog(
@@ -57,6 +61,7 @@ def log_request(session_id: str, prompt: str, response: str, decision: str, risk
             risk_score=risk_score,
             latency_ms=latency_ms,
             agent_breakdown=json.dumps(agent_breakdown),
+            matched_signatures=json.dumps(matched_signatures or []),
             reasoning=reasoning,
             is_stream=is_stream
         )
@@ -83,3 +88,4 @@ def log_security_event(session_id: str, event_type: str, severity: str, details:
         return evt.id
     finally:
         db.close()
+

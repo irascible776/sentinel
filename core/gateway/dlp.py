@@ -8,6 +8,7 @@ class DLPScanner:
             "EMAIL": re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
             "CREDIT_CARD": re.compile(r"\b(?:\d[ -]*?){13,16}\b"),
             "OPENAI_KEY": re.compile(r"sk-[a-zA-Z0-9]{48}"),
+            "GEMINI_KEY": re.compile(r"AIzaSy[0-9A-Za-z-_]{33}"),
             "AWS_KEY": re.compile(r"AKIA[0-9A-Z]{16}")
         }
 
@@ -35,11 +36,16 @@ class DLPScanner:
                 redacted_text = pattern.sub(f"[REDACTED {label}]", redacted_text)
 
         if has_leak:
+            is_canary = "CANARY" in leaked_details
             log_security_event(
                 session_id=session_id,
-                event_type="DATA_EXFILTRATION_PREVENTED",
-                severity="HIGH",
-                details={"leaked_patterns": leaked_details},
+                event_type="CANARY_EXFILTRATION" if is_canary else "DATA_EXFILTRATION_PREVENTED",
+                severity="CRITICAL" if is_canary else "HIGH",
+                details={
+                    "leaked_patterns": leaked_details,
+                    "canary_token": canary_token if is_canary else None,
+                    "action_taken": "RESPONSE_REDACTED"
+                },
                 request_id=request_id
             )
 

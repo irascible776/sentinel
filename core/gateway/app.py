@@ -1,8 +1,10 @@
+import os
 import json
+import time
 import uuid
 import httpx
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -20,6 +22,7 @@ from core.gateway.proxy import forward_to_upstream
 from core.gateway.dlp import dlp_scanner
 from core.gateway.stream_interceptor import stream_interceptor
 
+SERVER_START_TIME = time.time()
 judge = JudgeAgent()
 canary_engine = CanaryEngine(prefix=settings.CANARY_TOKEN_PREFIX)
 
@@ -44,8 +47,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+STATIC_INDEX = os.path.join(os.path.dirname(__file__), "static", "index.html")
+
+@app.get("/")
+@app.get("/demo")
+async def serve_demo_gui():
+    if os.path.exists(STATIC_INDEX):
+        return FileResponse(STATIC_INDEX)
+    return HTMLResponse("<h2>AI Security Gateway is running. Interactive GUI not found.</h2>")
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "uptime_sec": round(time.time() - SERVER_START_TIME, 2),
+        "timestamp": time.time(),
+        "service": "AI Security Gateway"
+    }
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request, background_tasks: BackgroundTasks):
+    t_start = time.perf_counter()
     try:
         payload = await request.json()
     except json.JSONDecodeError:
@@ -69,6 +91,8 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
     verdict = judge.evaluate(prompt=user_text, session_id=session_id)
     
     request_id = f"req-{uuid.uuid4().hex[:12]}"
+    latency_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
+    matched_sigs = verdict.get("matched_signatures", [])
     
     if verdict["decision"] == "BLOCK":
         # Log the blocked request
@@ -79,10 +103,11 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
             response="",
             decision="BLOCK",
             risk_score=verdict.get("risk_score", 100.0),
-            latency_ms=0.0, # Approximate
+            latency_ms=latency_ms,
             agent_breakdown=verdict.get("agent_breakdown", {}),
             reasoning=verdict.get("reasoning", "Blocked by engine"),
-            is_stream=stream
+            is_stream=stream,
+            matched_signatures=matched_sigs
         )
         return JSONResponse(status_code=403, content={
             "error": {
@@ -92,6 +117,7 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
                 "risk_score": verdict.get("risk_score"),
                 "reasoning": verdict.get("reasoning"),
                 "agent_breakdown": verdict.get("agent_breakdown"),
+                "matched_signatures": matched_sigs,
                 "request_id": request_id
             }
         })
@@ -102,7 +128,10 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
     
     # Step 3: Forward to Upstream
     client = app.state.http_client
-    upstream_response = await forward_to_upstream(client, payload, stream=stream)
+    try:
+        upstream_response = await forward_to_upstream(client, payload, stream=stream)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Upstream provider error: {str(e)}")
     
     if stream:
         # Step 4a: Streaming Circuit Breaker
@@ -129,7 +158,7 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
             "decision": "ALLOW",
             "risk_score": verdict.get("risk_score", 0.0),
             "confidence": verdict.get("confidence", 1.0),
-            "latency_ms": 0.0 # Approximate
+            "latency_ms": latency_ms
         }
         
         # Log allowed request
@@ -140,10 +169,11 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
             response=redacted_content,
             decision="ALLOW",
             risk_score=verdict.get("risk_score", 0.0),
-            latency_ms=0.0,
+            latency_ms=latency_ms,
             agent_breakdown=verdict.get("agent_breakdown", {}),
             reasoning=verdict.get("reasoning", "Clean"),
-            is_stream=False
+            is_stream=False,
+            matched_signatures=matched_sigs
         )
         
         return upstream_response
@@ -168,18 +198,19 @@ async def get_stats():
         allowed = db.query(func.count(RequestLog.id)).filter(RequestLog.decision == "ALLOW").scalar()
         blocked = db.query(func.count(RequestLog.id)).filter(RequestLog.decision == "BLOCK").scalar()
         flagged = db.query(func.count(RequestLog.id)).filter(RequestLog.decision == "FLAG").scalar()
-        canary_leaks = db.query(func.count(SecurityEvent.id)).filter(SecurityEvent.event_type.in_(["DATA_EXFILTRATION_PREVENTED", "STREAM_CIRCUIT_BREAKER"])).scalar()
+        canary_leaks = db.query(func.count(SecurityEvent.id)).filter(
+            SecurityEvent.event_type.in_(["CANARY_EXFILTRATION", "DATA_EXFILTRATION_PREVENTED", "STREAM_CIRCUIT_BREAKER"])
+        ).scalar()
         
-        # Approximate average latency
         avg_latency = db.query(func.avg(RequestLog.latency_ms)).scalar() or 0.0
         
         return {
-            "total_prompts": total,
-            "allowed_count": allowed,
-            "flagged_count": flagged,
-            "blocked_count": blocked,
-            "canary_leaks": canary_leaks,
-            "avg_latency_ms": avg_latency
+            "total_prompts": total or 0,
+            "allowed_count": allowed or 0,
+            "flagged_count": flagged or 0,
+            "blocked_count": blocked or 0,
+            "canary_leaks": canary_leaks or 0,
+            "avg_latency_ms": round(float(avg_latency), 2)
         }
     finally:
         db.close()
@@ -193,18 +224,32 @@ async def get_events(limit: int = 50, offset: int = 0, verdict: str = None):
         if verdict:
             query = query.filter(RequestLog.decision == verdict)
         events = query.order_by(RequestLog.timestamp.desc()).offset(offset).limit(limit).all()
-        return [
-            {
+        result = []
+        for e in events:
+            sigs = []
+            if hasattr(e, "matched_signatures") and e.matched_signatures:
+                try:
+                    sigs = json.loads(e.matched_signatures) if isinstance(e.matched_signatures, str) else e.matched_signatures
+                except Exception:
+                    sigs = [str(e.matched_signatures)]
+            agent_breakdown = {}
+            if e.agent_breakdown:
+                try:
+                    agent_breakdown = json.loads(e.agent_breakdown) if isinstance(e.agent_breakdown, str) else e.agent_breakdown
+                except Exception:
+                    pass
+            result.append({
                 "id": e.id,
                 "session_id": e.session_id,
-                "timestamp": e.timestamp.isoformat(),
+                "timestamp": e.timestamp.isoformat() if hasattr(e.timestamp, "isoformat") else str(e.timestamp),
                 "prompt": e.prompt,
                 "decision": e.decision,
                 "risk_score": e.risk_score,
+                "matched_signatures": sigs,
                 "reasoning": e.reasoning,
-                "agent_breakdown": json.loads(e.agent_breakdown)
-            } for e in events
-        ]
+                "agent_breakdown": agent_breakdown
+            })
+        return result
     finally:
         db.close()
 
@@ -213,17 +258,30 @@ async def get_canary_alerts():
     from core.gateway.database import SessionLocal, SecurityEvent
     db = SessionLocal()
     try:
-        events = db.query(SecurityEvent).filter(SecurityEvent.event_type.in_(["DATA_EXFILTRATION_PREVENTED", "STREAM_CIRCUIT_BREAKER"])).order_by(SecurityEvent.timestamp.desc()).all()
-        return [
-            {
+        events = db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.in_(["CANARY_EXFILTRATION", "DATA_EXFILTRATION_PREVENTED", "STREAM_CIRCUIT_BREAKER"])
+        ).order_by(SecurityEvent.timestamp.desc()).all()
+        result = []
+        for e in events:
+            details_dict = {}
+            if e.details:
+                try:
+                    details_dict = json.loads(e.details) if isinstance(e.details, str) else e.details
+                except Exception:
+                    details_dict = {"raw": str(e.details)}
+            token = details_dict.get("canary_token") or details_dict.get("token") or "CANARY-SECRET-DETECTED"
+            action = details_dict.get("action_taken") or ("STREAM_TERMINATED" if e.event_type == "STREAM_CIRCUIT_BREAKER" else "RESPONSE_REDACTED")
+            result.append({
                 "id": e.id,
                 "session_id": e.session_id,
-                "timestamp": e.timestamp.isoformat(),
+                "timestamp": e.timestamp.isoformat() if hasattr(e.timestamp, "isoformat") else str(e.timestamp),
                 "event_type": e.event_type,
                 "severity": e.severity,
-                "details": json.loads(e.details)
-            } for e in events
-        ]
+                "canary_token": token,
+                "action_taken": action,
+                "details": details_dict
+            })
+        return result
     finally:
         db.close()
 
@@ -239,8 +297,12 @@ async def get_rules():
 @app.post("/api/v1/threat-intel/run")
 async def run_threat_intel():
     if ThreatIntelligenceFeed:
-        feed = ThreatIntelligenceFeed()
+        feed = ThreatIntelligenceFeed(
+            db_path=settings.DATABASE_URL.replace("sqlite:///./", "").replace("sqlite:///", "") if hasattr(settings, "DATABASE_URL") else "gateway.db",
+            rules_path=settings.THREAT_RULES_PATH if hasattr(settings, "THREAT_RULES_PATH") else "core/detection/threat_rules.json"
+        )
         result = feed.run_clustering_and_update()
         return result
     else:
         raise HTTPException(status_code=501, detail="Threat Intelligence Module not implemented yet")
+

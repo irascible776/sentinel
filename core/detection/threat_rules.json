@@ -1,6 +1,6 @@
 {
   "version": "1.2.0",
-  "updated_at": "2026-10-03T15:28:00Z",
+  "updated_at": "2026-10-08T04:48:09.086840+00:00",
   "rules": [
     {
       "id": "SIG-001",
@@ -43,6 +43,51 @@
       "pattern": "(?i)(secret\\s+canary\\s+token|reveal\\s+confidential\\s+key|dump\\s+canary|master\\s+api\\s+keys)",
       "severity": "HIGH",
       "weight": 85
+    },
+    {
+      "id": "AUTO-64F0ED",
+      "name": "Auto-Clustered: ignore previous",
+      "pattern": "(?i)\\bignore\\s+(?:\\w+\\s+)*?previous\\b",
+      "severity": "HIGH",
+      "weight": 85,
+      "source": "threat_intelligence_feed",
+      "created_at": "2026-10-08T04:48:09.086629+00:00"
+    },
+    {
+      "id": "AUTO-6171B8",
+      "name": "Auto-Clustered: previous instructions",
+      "pattern": "(?i)\\bprevious\\s+(?:\\w+\\s+)*?instructions\\b",
+      "severity": "HIGH",
+      "weight": 85,
+      "source": "threat_intelligence_feed",
+      "created_at": "2026-10-08T04:48:09.086654+00:00"
+    },
+    {
+      "id": "AUTO-652EAC",
+      "name": "Auto-Clustered: output prompt",
+      "pattern": "(?i)\\boutput\\s+(?:\\w+\\s+)*?prompt\\b",
+      "severity": "HIGH",
+      "weight": 85,
+      "source": "threat_intelligence_feed",
+      "created_at": "2026-10-08T04:48:09.086661+00:00"
+    },
+    {
+      "id": "AUTO-D2355B",
+      "name": "Auto-Clustered: previous instructions output",
+      "pattern": "(?i)\\bprevious\\s+(?:\\w+\\s+)*?instructions\\s+(?:\\w+\\s+)*?output\\b",
+      "severity": "HIGH",
+      "weight": 85,
+      "source": "threat_intelligence_feed",
+      "created_at": "2026-10-08T04:48:09.086669+00:00"
+    },
+    {
+      "id": "AUTO-635138",
+      "name": "Auto-Clustered: previous instructions output prompt",
+      "pattern": "(?i)\\bprevious\\s+(?:\\w+\\s+)*?instructions\\s+(?:\\w+\\s+)*?output\\s+(?:\\w+\\s+)*?prompt\\b",
+      "severity": "HIGH",
+      "weight": 85,
+      "source": "threat_intelligence_feed",
+      "created_at": "2026-10-08T04:48:09.086677+00:00"
     }
   ]
 }

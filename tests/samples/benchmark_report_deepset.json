@@ -1,0 +1,14 @@
+{
+  "dataset": "deepset/prompt-injections",
+  "sample_size": 300,
+  "accuracy_pct": 73.0,
+  "precision_pct": 100.0,
+  "recall_pct": 46.0,
+  "f1_score": 0.6301,
+  "false_positive_rate_pct": 0.0,
+  "avg_latency_ms": 711.13,
+  "tp": 69,
+  "tn": 150,
+  "fp": 0,
+  "fn": 81
+}

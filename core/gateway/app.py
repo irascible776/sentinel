@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import time
@@ -93,7 +94,13 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    session_id = payload.get("session_id", f"sess-{uuid.uuid4().hex[:8]}")
+    # Session Resolution: payload -> header -> cookie -> ephemeral UUID
+    session_id = (
+        payload.get("session_id")
+        or request.headers.get("x-session-id")
+        or request.cookies.get("sentinel_sid")
+        or f"sess-{uuid.uuid4().hex[:12]}"
+    )
     messages = payload.get("messages", [])
     stream = payload.get("stream", False)
     
@@ -107,8 +114,30 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
     if not user_text:
         raise HTTPException(status_code=400, detail="No user message found")
 
-    # Step 1: Ingress Security Check (Rohit's Detection Engine)
-    verdict = judge.evaluate(prompt=user_text, session_id=session_id)
+    # Step 1: Ingress Security Check (Async Non-Blocking Execution with Timeout)
+    try:
+        verdict = await asyncio.wait_for(
+            asyncio.to_thread(judge.evaluate, prompt=user_text, session_id=session_id),
+            timeout=10.0
+        )
+    except asyncio.TimeoutError:
+        verdict = {
+            "decision": "FLAG",
+            "risk_score": 45.0,
+            "confidence": 0.5,
+            "agent_breakdown": {},
+            "matched_signatures": [],
+            "reasoning": "Detection engine evaluation timeout; defaulted to FLAG for audit."
+        }
+    except Exception as e:
+        verdict = {
+            "decision": "FLAG",
+            "risk_score": 45.0,
+            "confidence": 0.5,
+            "agent_breakdown": {},
+            "matched_signatures": [],
+            "reasoning": f"Detection engine encountered error ({str(e)}); defaulted to FLAG."
+        }
     
     request_id = f"req-{uuid.uuid4().hex[:12]}"
     latency_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
@@ -179,22 +208,25 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
         if "choices" in upstream_response and len(upstream_response["choices"]) > 0:
             upstream_response["choices"][0]["message"]["content"] = redacted_content
             
+        decision_val = verdict.get("decision", "ALLOW")
+        status_val = "VERIFIED_SAFE" if decision_val == "ALLOW" else "FLAGGED_MONITORED"
+
         # Append security metadata
         upstream_response["security_metadata"] = {
-            "status": "VERIFIED_SAFE",
-            "decision": "ALLOW",
+            "status": status_val,
+            "decision": decision_val,
             "risk_score": verdict.get("risk_score", 0.0),
             "confidence": verdict.get("confidence", 1.0),
             "latency_ms": latency_ms
         }
         
-        # Log allowed request
+        # Log request with actual decision
         background_tasks.add_task(
             log_request,
             session_id=session_id,
             prompt=user_text,
             response=redacted_content,
-            decision="ALLOW",
+            decision=decision_val,
             risk_score=verdict.get("risk_score", 0.0),
             latency_ms=latency_ms,
             agent_breakdown=verdict.get("agent_breakdown", {}),

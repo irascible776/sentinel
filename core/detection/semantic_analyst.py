@@ -12,10 +12,25 @@ from typing import Dict, Any, Optional
 class SemanticAnalyst:
     def __init__(
         self,
-        model_name: str = "protectai/deberta-v3-base-prompt-injection-v2",
+        model_name: Optional[str] = None,
         device: Optional[str] = None
     ):
-        self.model_name = os.getenv("HF_MODEL_NAME", model_name)
+        if model_name is None:
+            model_name = os.getenv("HF_MODEL_NAME")
+            if not model_name:
+                try:
+                    from core.gateway.config import settings
+                    model_name = settings.HF_MODEL_NAME
+                except Exception:
+                    model_name = "models/sentinel_deberta"
+
+        # Resolve relative model paths to absolute path if exists locally:
+        if model_name and not os.path.isabs(model_name) and not os.path.exists(model_name):
+            candidate = os.path.join(os.path.dirname(__file__), "../../", model_name)
+            if os.path.exists(candidate):
+                model_name = os.path.abspath(candidate)
+
+        self.model_name = model_name or "models/sentinel_deberta"
         # Determine device (cpu, cuda, or mps for Apple Silicon)
         if device is None:
             configured_device = os.getenv("DETECTION_DEVICE", "cpu").lower()

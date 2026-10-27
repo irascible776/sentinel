@@ -5,21 +5,21 @@
     {
       "id": "SIG-001",
       "name": "Direct Instruction Override",
-      "pattern": "(?i)(ignore\\s+all\\s+(previous|prior|system)?\\s*(instructions|rules|guidelines)|disregard\\s+all\\s+rules)",
+      "pattern": "(?i)(ignore|disregard|forget|override)\\s+(all\\s+)?(previous|prior|system|internal)?\\s*(instructions|rules|guidelines|directives)",
       "severity": "HIGH",
       "weight": 100
     },
     {
       "id": "SIG-002",
       "name": "DAN Persona & Developer Mode Jailbreak",
-      "pattern": "(?i)(you\\s+are\\s+now\\s+DAN|do\\s+anything\\s+now|developer\\s+(mode|environment)|jailbreak\\s+mode|safety\\s+guardrails?\\s+(are\\s+)?disabled)",
+      "pattern": "(?i)(you\\s+are\\s+now\\s+(DAN|EvilBot|AIM)|do\\s+anything\\s+now|\\b(in|enter|enable|switch\\s+to|activate|turn\\s+on)\\s+developer\\s+mode\\b|developer\\s+mode\\s*:\\s*(enabled|true)|jailbreak\\s+mode|uncensored\\s+mode|safety\\s+guardrails?\\s+(are\\s+)?disabled)",
       "severity": "HIGH",
       "weight": 95
     },
     {
       "id": "SIG-003",
       "name": "System Prompt Extraction",
-      "pattern": "(?i)(repeat\\s+the\\s+words\\s+above|print\\s+initial\\s+system\\s+prompt|what\\s+are\\s+your\\s+instructions|system\\s+prompt\\s+header)",
+      "pattern": "(?i)(repeat\\s+the\\s+words\\s+above|print\\s+(?:the\\s+)?(?:initial|confidential)?\\s*system\\s+prompt|what\\s+are\\s+your\\s+instructions|system\\s+prompt\\s+header|first\\s+directive\\s+given\\s+to\\s+you)",
       "severity": "MEDIUM",
       "weight": 80
     },
@@ -48,8 +48,8 @@
       "id": "AUTO-64F0ED",
       "name": "Auto-Clustered: ignore previous",
       "pattern": "(?i)\\bignore\\s+(?:\\w+\\s+)*?previous\\b",
-      "severity": "HIGH",
-      "weight": 85,
+      "severity": "MEDIUM",
+      "weight": 35,
       "source": "threat_intelligence_feed",
       "created_at": "2026-10-08T04:48:09.086629+00:00"
     },
@@ -57,8 +57,8 @@
       "id": "AUTO-6171B8",
       "name": "Auto-Clustered: previous instructions",
       "pattern": "(?i)\\bprevious\\s+(?:\\w+\\s+)*?instructions\\b",
-      "severity": "HIGH",
-      "weight": 85,
+      "severity": "MEDIUM",
+      "weight": 35,
       "source": "threat_intelligence_feed",
       "created_at": "2026-10-08T04:48:09.086654+00:00"
     },
@@ -66,8 +66,8 @@
       "id": "AUTO-652EAC",
       "name": "Auto-Clustered: output prompt",
       "pattern": "(?i)\\boutput\\s+(?:\\w+\\s+)*?prompt\\b",
-      "severity": "HIGH",
-      "weight": 85,
+      "severity": "MEDIUM",
+      "weight": 35,
       "source": "threat_intelligence_feed",
       "created_at": "2026-10-08T04:48:09.086661+00:00"
     },
@@ -75,8 +75,8 @@
       "id": "AUTO-D2355B",
       "name": "Auto-Clustered: previous instructions output",
       "pattern": "(?i)\\bprevious\\s+(?:\\w+\\s+)*?instructions\\s+(?:\\w+\\s+)*?output\\b",
-      "severity": "HIGH",
-      "weight": 85,
+      "severity": "MEDIUM",
+      "weight": 35,
       "source": "threat_intelligence_feed",
       "created_at": "2026-10-08T04:48:09.086669+00:00"
     },
@@ -84,8 +84,8 @@
       "id": "AUTO-635138",
       "name": "Auto-Clustered: previous instructions output prompt",
       "pattern": "(?i)\\bprevious\\s+(?:\\w+\\s+)*?instructions\\s+(?:\\w+\\s+)*?output\\s+(?:\\w+\\s+)*?prompt\\b",
-      "severity": "HIGH",
-      "weight": 85,
+      "severity": "MEDIUM",
+      "weight": 35,
       "source": "threat_intelligence_feed",
       "created_at": "2026-10-08T04:48:09.086677+00:00"
     }

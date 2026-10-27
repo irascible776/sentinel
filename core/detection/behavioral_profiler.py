@@ -5,7 +5,9 @@ Detects multi-turn probing, escalating boundary testing, and rapid fuzzing veloc
 """
 
 import time
+import math
 import os
+import threading
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
 
@@ -18,9 +20,10 @@ class BehavioralProfiler:
                 window_minutes = 10
         self.window_seconds = window_minutes * 60
         self.max_sessions = max_sessions
+        self._lock = threading.Lock()
         # session_id -> list of records: [{"timestamp": float, "score": float, "prompt_len": int}]
         self.sessions: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        self._last_prune_time = time.time()
+        self._last_prune_time = time.monotonic()
 
     def _prune_session(self, session_id: str, current_time: float) -> List[Dict[str, Any]]:
         """Removes records older than the sliding temporal window."""
@@ -60,71 +63,71 @@ class BehavioralProfiler:
         preliminary_risk: float = 0.0
     ) -> Dict[str, Any]:
         """
-        Records the current interaction and calculates the behavioral risk score.
-        
-        Returns:
-            {
-                "score": float,                   # 0.0 to 100.0 (behavioral risk contribution)
-                "session_prompt_count": int,      # Requests in active window
-                "velocity_rpm": float,            # Requests per minute
-                "escalation_detected": bool,      # True if scores are trending upwards
-                "escalation_factor": float,       # Escalation penalty applied
-                "latency_ms": float
-            }
+        Thread-safe recording and evaluation of session behavioral risk with monotonic exponential decay.
         """
         t0 = time.perf_counter()
-        now = time.time()
+        now = time.monotonic()
 
-        self._periodic_global_cleanup(now)
-        active_records = self._prune_session(session_id, now)
+        with self._lock:
+            self._periodic_global_cleanup(now)
+            active_records = self._prune_session(session_id, now)
 
-        # Baseline behavioral score
-        behavioral_score = 5.0
-        escalation_detected = False
-        escalation_factor = 0.0
+            # Baseline behavioral score
+            behavioral_score = 5.0
+            escalation_detected = False
+            escalation_factor = 0.0
 
-        if len(active_records) >= 2:
-            # Check for escalation across last 3 prompts
-            recent_scores = [r["score"] for r in active_records[-3:]] + [preliminary_risk]
-            # Escalation: at least 3 points where each is higher than the previous by at least 10 points
-            if len(recent_scores) >= 3:
-                is_increasing = all(
-                    recent_scores[i] < recent_scores[i+1]
-                    for i in range(len(recent_scores) - 1)
-                )
-                if is_increasing and (recent_scores[-1] - recent_scores[0]) >= 20.0:
-                    escalation_detected = True
-                    escalation_factor = 30.0
+            if len(active_records) >= 2:
+                # Check for escalation across last 3 prompts
+                recent_scores = [r["score"] for r in active_records[-3:]] + [preliminary_risk]
+                if len(recent_scores) >= 3:
+                    is_increasing = all(
+                        recent_scores[i] < recent_scores[i+1]
+                        for i in range(len(recent_scores) - 1)
+                    )
+                    if is_increasing and (recent_scores[-1] - recent_scores[0]) >= 20.0:
+                        escalation_detected = True
+                        escalation_factor = 30.0
 
-            # Historical baseline from average of recent suspicious activity
-            recent_avg = sum(r["score"] for r in active_records) / len(active_records)
-            behavioral_score = max(behavioral_score, recent_avg * 0.5)
+                # Smooth Exponential Decay on past scores (tau = 180s)
+                decayed_scores = []
+                for r in active_records:
+                    dt = max(0.0, now - r["timestamp"])
+                    decay_factor = math.exp(-dt / 180.0)
+                    decayed_scores.append(r["score"] * decay_factor)
 
-            # Prior Blocked Attack Penalty:
-            has_prior_attack = any(r["score"] >= 70.0 for r in active_records)
-            if has_prior_attack:
-                behavioral_score = max(behavioral_score, 60.0)
+                if decayed_scores:
+                    recent_decayed_max = max(decayed_scores)
+                    if recent_decayed_max >= 70.0:
+                        decayed_attack_penalty = 60.0 * (recent_decayed_max / 100.0)
+                        behavioral_score = max(behavioral_score, decayed_attack_penalty)
 
-        # Calculate request velocity (requests per minute)
-        prompt_count = len(active_records) + 1
-        window_span_minutes = max(1.0, (now - active_records[0]["timestamp"]) / 60.0) if active_records else 1.0
-        velocity_rpm = prompt_count / window_span_minutes
+                    recent_avg = sum(decayed_scores) / len(decayed_scores)
+                    behavioral_score = max(behavioral_score, recent_avg * 0.5)
 
-        # Velocity penalty for automated fuzzing / rapid scanning (>15 req/min)
-        if velocity_rpm > 15.0:
-            behavioral_score += min(35.0, (velocity_rpm - 15.0) * 2.0)
+            # Calculate request velocity (requests per minute)
+            prompt_count = len(active_records) + 1
+            window_span_minutes = max(1.0, (now - active_records[0]["timestamp"]) / 60.0) if active_records else 1.0
+            velocity_rpm = prompt_count / window_span_minutes
 
-        # Add escalation bonus if multi-turn probing is identified:
-        if escalation_detected:
-            behavioral_score += escalation_factor
+            # Velocity penalty for automated fuzzing / rapid scanning (>15 req/min)
+            if velocity_rpm > 15.0:
+                behavioral_score += min(35.0, (velocity_rpm - 15.0) * 2.0)
 
-        # Add new record to session history:
-        active_records.append({
-            "timestamp": now,
-            "score": preliminary_risk,
-            "prompt_len": len(prompt)
-        })
-        self.sessions[session_id] = active_records
+            # Add escalation bonus if multi-turn probing is identified:
+            if escalation_detected:
+                behavioral_score += escalation_factor
+
+            # Hard cap behavioral risk contribution so history alone cannot trigger BLOCK (>= 75)
+            behavioral_score = min(behavioral_score, 65.0)
+
+            # Add new record to session history:
+            active_records.append({
+                "timestamp": now,
+                "score": preliminary_risk,
+                "prompt_len": len(prompt)
+            })
+            self.sessions[session_id] = active_records
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 

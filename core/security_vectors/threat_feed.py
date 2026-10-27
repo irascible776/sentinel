@@ -93,8 +93,8 @@ class ThreatIntelligenceFeed:
                 "id": rule_id,
                 "name": f"Auto-Clustered: {clean_phrase[:40]}",
                 "pattern": pattern,
-                "severity": "HIGH",
-                "weight": 85,
+                "severity": "MEDIUM",
+                "weight": 35,
                 "source": "threat_intelligence_feed",
                 "created_at": datetime.now(timezone.utc).isoformat()
             })

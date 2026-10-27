@@ -1,0 +1,10 @@
+{
+  "temperature": 10.0,
+  "model_id": "microsoft/deberta-v3-base",
+  "max_length": 256,
+  "thresholds": {
+    "allow_max_risk": 40.0,
+    "flag_min_risk": 40.0,
+    "block_min_risk": 80.0
+  }
+}

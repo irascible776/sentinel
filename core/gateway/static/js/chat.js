@@ -132,6 +132,8 @@ const SentinelChat = (() => {
         const aiMsg = {
           role:       'assistant',
           content,
+          decision:   meta.decision || 'ALLOW',
+          status:     meta.status || 'VERIFIED_SAFE',
           risk_score: meta.risk_score || 0,
           confidence: meta.confidence || 1,
           latency_ms: meta.latency_ms || 0,
@@ -222,6 +224,12 @@ const SentinelChat = (() => {
         <div class="msg-time">${Sentinel.formatTime(msg.time)}</div>
       `;
     } else if (msg.role === 'assistant') {
+      const isFlag = msg.decision === 'FLAG' || msg.status === 'FLAGGED_MONITORED';
+      const cardClass = isFlag ? 'safe-card flag-card' : 'safe-card';
+      const badgeHtml = isFlag 
+        ? `<span class="badge" style="background:#f59e0b22;color:#d97706;border:1px solid #f59e0b44">⚠️ FLAGGED</span>` 
+        : `<span class="badge badge-safe">✓ SAFE</span>`;
+
       el.className = 'msg ai';
       el.innerHTML = `
         <div class="msg-avatar">
@@ -230,9 +238,9 @@ const SentinelChat = (() => {
             <path d="M7 10l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <div class="safe-card">
+        <div class="${cardClass}">
           <div class="safe-header">
-            <span class="badge badge-safe">✓ SAFE</span>
+            ${badgeHtml}
             <span style="font-size:11px;color:var(--text-muted)">
               Risk: ${msg.risk_score?.toFixed?.(1) ?? '0.0'}% · ${msg.latency_ms?.toFixed?.(0) ?? '—'}ms
             </span>

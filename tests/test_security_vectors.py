@@ -158,7 +158,7 @@ class TestThreatIntelligenceFeed:
             assert "pattern" in r
             assert "(?i)" in r["pattern"]
             assert r["severity"] in ["MEDIUM", "HIGH"]
-            assert r["weight"] >= 70
+            assert r["weight"] == 35
 
     def test_dynamic_rules_update_and_hot_reload(self, tmp_path):
         # Create isolated temp rules file

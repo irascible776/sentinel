@@ -6,6 +6,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from core.detection.judge import JudgeAgent
@@ -47,13 +48,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STATIC_INDEX = os.path.join(os.path.dirname(__file__), "static", "index.html")
+STATIC_DIR   = os.path.join(os.path.dirname(__file__), "static")
+STATIC_INDEX = os.path.join(STATIC_DIR, "index.html")
+
+# ── Serve static sub-directories (CSS / JS / images etc.) ──────────────────
+# Must be mounted BEFORE the FileResponse route so Starlette route order
+# doesn't shadow the static mounts (static mounts are matched first by path).
+_css_dir = os.path.join(STATIC_DIR, "css")
+_js_dir  = os.path.join(STATIC_DIR, "js")
+if os.path.isdir(_css_dir):
+    app.mount("/css", StaticFiles(directory=_css_dir), name="static-css")
+if os.path.isdir(_js_dir):
+    app.mount("/js",  StaticFiles(directory=_js_dir),  name="static-js")
 
 @app.get("/")
 @app.get("/demo")
+@app.get("/sentinel")
 async def serve_demo_gui():
     if os.path.exists(STATIC_INDEX):
-        return FileResponse(STATIC_INDEX)
+        return FileResponse(
+            STATIC_INDEX,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return HTMLResponse("<h2>AI Security Gateway is running. Interactive GUI not found.</h2>")
 
 @app.get("/health")
@@ -127,10 +147,17 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
     payload["messages"] = instrumented_messages
     
     # Step 3: Forward to Upstream
-    client = app.state.http_client
+    client = getattr(app.state, "http_client", None)
+    temp_client = None
+    if client is None:
+        temp_client = httpx.AsyncClient(timeout=30.0)
+        client = temp_client
+
     try:
         upstream_response = await forward_to_upstream(client, payload, stream=stream)
     except Exception as e:
+        if temp_client:
+            await temp_client.aclose()
         raise HTTPException(status_code=502, detail=f"Upstream provider error: {str(e)}")
     
     if stream:

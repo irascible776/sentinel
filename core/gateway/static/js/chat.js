@@ -20,10 +20,9 @@ const SentinelChat = (() => {
           <svg style="width:18px;height:18px;color:var(--accent)" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H6l-4 3V5z"/>
           </svg>
-          <span class="chat-header-title">Threat Feed</span>
+          <span class="chat-header-title">Playground</span>
         </div>
         <div class="chat-header-badges">
-          <span class="badge badge-accent" id="msg-count-badge">0 messages</span>
           <span class="badge badge-block"  id="threat-count-badge" style="display:none">0 threats</span>
         </div>
       </div>
@@ -87,6 +86,9 @@ const SentinelChat = (() => {
     Sentinel.state.messages.push(userMsg);
     appendMessageToDOM(userMsg);
     scrollToBottom();
+    if (typeof Sentinel.updateCurrentSession === 'function') {
+      Sentinel.updateCurrentSession(text);
+    }
 
     // Show typing indicator
     const typingId = showTyping();
@@ -168,6 +170,9 @@ const SentinelChat = (() => {
     input.disabled = false;
     sendBtn.classList.remove('loading');
     scrollToBottom();
+    if (typeof Sentinel.updateCurrentSession === 'function') {
+      Sentinel.updateCurrentSession();
+    }
     updateBadges();
     input.focus();
   }
@@ -306,18 +311,10 @@ const SentinelChat = (() => {
   function updateBadges() {
     const msgs    = Sentinel.state.messages;
     const threats = msgs.filter(m => m.role === 'blocked').length;
-    const msgBadge    = document.getElementById('msg-count-badge');
     const threatBadge = document.getElementById('threat-count-badge');
-    if (msgBadge) msgBadge.textContent = `${msgs.length} message${msgs.length !== 1 ? 's' : ''}`;
     if (threatBadge) {
       threatBadge.textContent = `${threats} threat${threats !== 1 ? 's' : ''} detected`;
       threatBadge.style.display = threats > 0 ? 'inline-flex' : 'none';
-    }
-    // Nav badge
-    const navBadge = document.getElementById('threat-badge');
-    if (navBadge) {
-      navBadge.textContent = Sentinel.state.threatCount;
-      navBadge.style.display = Sentinel.state.threatCount > 0 ? 'inline-flex' : 'none';
     }
   }
 

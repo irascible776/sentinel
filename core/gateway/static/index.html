@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="/css/main.css?v=1.0.1"/>
+  <link rel="stylesheet" href="/css/main.css?v=1.0.2"/>
 </head>
 <body>
   <div id="app">
@@ -33,33 +33,25 @@
         </a>
         <a href="#" class="nav-item" data-view="chat" id="nav-chat">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H6l-4 3V5z"/></svg>
-          Threat Feed
-          <span class="nav-badge" id="threat-badge" style="display:none">0</span>
+          Playground
         </a>
         <a href="#" class="nav-item" data-view="analytics" id="nav-analytics">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="2,14 7,9 11,12 18,4"/><line x1="2" y1="18" x2="18" y2="18"/></svg>
           Analytics
         </a>
-        <a href="#" class="nav-item" data-view="settings" id="nav-settings">
-          <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v1.5m0 13V18m8-8h-1.5M3.5 10H2m12.24-4.24-1.06 1.06M6.82 13.18l-1.06 1.06M16.24 14.24l-1.06-1.06M6.82 6.82 5.76 5.76"/></svg>
-          Settings
-        </a>
       </div>
 
-      <div class="nav-section">
-        <div class="nav-section-label">SECURITY MODULES</div>
-        <a href="#" class="nav-item sub" data-view="analytics" data-filter="canary">
-          <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3C6 3 3 6.5 3 10s3 7 7 7 7-3.5 7-7c0-2-.8-3.8-2-5"/><circle cx="10" cy="10" r="2"/></svg>
-          Canary Tokens
-        </a>
-        <a href="#" class="nav-item sub" data-view="analytics" data-filter="rag">
-          <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h12M4 8h8M4 12h10M4 16h6"/><circle cx="16" cy="14" r="3"/><line x1="18.5" y1="16.5" x2="20" y2="18"/></svg>
-          RAG Scanner
-        </a>
-        <a href="#" class="nav-item sub" data-view="analytics" data-filter="dlp">
-          <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="14" height="10" rx="2"/><path d="M7 8V5a3 3 0 016 0v3"/></svg>
-          DLP Guard
-        </a>
+      <div class="nav-section chat-history-section">
+        <div class="sidebar-chat-header">
+          <span class="nav-section-label">CHATS</span>
+          <button class="btn-new-chat" id="btn-sidebar-new-chat" title="Start a new chat session" onclick="Sentinel.startNewChat()">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>
+            <span>New Chat</span>
+          </button>
+        </div>
+        <div id="sidebar-chat-history" class="sidebar-chat-history">
+          <!-- Populated by JS -->
+        </div>
       </div>
 
       <div class="sidebar-footer">
@@ -86,10 +78,10 @@
   <!-- Toast notifications -->
   <div id="toast-container"></div>
 
-  <script src="/js/app.js?v=1.0.1"></script>
-  <script src="/js/dashboard.js?v=1.0.1"></script>
-  <script src="/js/chat.js?v=1.0.1"></script>
-  <script src="/js/analytics.js?v=1.0.1"></script>
+  <script src="/js/app.js?v=1.0.2"></script>
+  <script src="/js/dashboard.js?v=1.0.2"></script>
+  <script src="/js/chat.js?v=1.0.2"></script>
+  <script src="/js/analytics.js?v=1.0.2"></script>
   <script>
     // Boot
     document.addEventListener('DOMContentLoaded', () => Sentinel.init());

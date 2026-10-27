@@ -205,7 +205,7 @@ const SentinelDashboard = (() => {
           <button class="quick-chip" onclick="Sentinel.navigate('chat')">💬 Test an Attack</button>
           <button class="quick-chip" onclick="Sentinel.navigate('analytics')">📊 View Threat Logs</button>
           <button class="quick-chip" onclick="Sentinel.navigate('analytics')">📋 Export Report</button>
-          <button class="quick-chip" onclick="Sentinel.navigate('settings')">⚙️ Configure Rules</button>
+          <button class="quick-chip" onclick="Sentinel.startNewChat()">✨ New Chat</button>
         </div>
 
         <div class="input-bar" style="cursor:pointer" onclick="Sentinel.navigate('chat')">

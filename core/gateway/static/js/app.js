@@ -1,6 +1,6 @@
 /**
  * Sentinel — app.js
- * Global state, router, API utilities, toast, navigation.
+ * Global state, router, API utilities, toast, navigation, chat history.
  */
 
 const Sentinel = (() => {
@@ -12,10 +12,13 @@ const Sentinel = (() => {
     stats:        null,
     events:       [],
     canaryAlerts: [],
-    messages:     [],          // chat history
+    messages:     [],          // current active chat messages
+    chatSessions: [],          // list of all user chat sessions
     threatCount:  0,
     statsInterval: null,
   };
+
+  const SESSIONS_STORAGE_KEY = 'sentinel_chat_sessions';
 
   /* ── API helpers ────────────────────────────────────────── */
   const api = {
@@ -40,8 +43,11 @@ const Sentinel = (() => {
     const el = document.createElement('div');
     el.className = `toast ${type}`;
     el.textContent = msg;
-    document.getElementById('toast-container').appendChild(el);
-    setTimeout(() => el.remove(), 3000);
+    const container = document.getElementById('toast-container');
+    if (container) {
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
   }
 
   /* ── Router ─────────────────────────────────────────────── */
@@ -61,7 +67,6 @@ const Sentinel = (() => {
       case 'dashboard':  SentinelDashboard.render(extra);  break;
       case 'chat':       SentinelChat.render(extra);        break;
       case 'analytics':  SentinelAnalytics.render(extra);   break;
-      case 'settings':   renderSettings();                  break;
       default:           SentinelDashboard.render(extra);
     }
   }
@@ -76,87 +81,171 @@ const Sentinel = (() => {
     });
   }
 
-  /* ── Settings view ──────────────────────────────────────── */
-  async function renderSettings() {
-    const panel = document.getElementById('context-panel');
-    const main  = document.getElementById('main-area');
+  /* ── Chat Sessions & History ───────────────────────────── */
+  async function loadSessionsFromStorage() {
+    try {
+      const data = localStorage.getItem(SESSIONS_STORAGE_KEY);
+      if (data) {
+        state.chatSessions = JSON.parse(data);
+      }
+    } catch {
+      state.chatSessions = [];
+    }
 
-    panel.innerHTML = `
-      <div class="panel-section">
-        <div class="panel-section-title">Gateway Config</div>
-      </div>
-      <div class="panel-section">
-        <div class="stat-row"><span class="stat-label">Host</span><span class="stat-value">127.0.0.1:8000</span></div>
-        <div class="stat-row"><span class="stat-label">Session ID</span></div>
-        <code style="font-size:11px;color:var(--accent);word-break:break-all;padding:4px 0;display:block">${state.sessionId}</code>
-      </div>
-    `;
+    if (!Array.isArray(state.chatSessions)) {
+      state.chatSessions = [];
+    }
 
-    let health = {};
-    try { health = await api.get('/health'); } catch {}
-    let rules  = { rules: [] };
-    try { rules  = await api.get('/api/v1/rules'); } catch {}
+    // If local storage is empty, discover any past audit events from server
+    if (state.chatSessions.length === 0) {
+      try {
+        const pastEvents = await api.get('/api/v1/events?limit=50');
+        if (Array.isArray(pastEvents) && pastEvents.length > 0) {
+          const map = {};
+          for (const ev of pastEvents) {
+            const sid = ev.session_id || 'sess-default';
+            if (!map[sid]) {
+              map[sid] = {
+                id: sid,
+                title: truncate((ev.prompt || 'Conversation').replace(/[\r\n]+/g, ' '), 30),
+                lastUpdated: ev.timestamp || new Date().toISOString(),
+                messages: []
+              };
+            }
+            if (ev.prompt) {
+              map[sid].messages.push({
+                role: 'user',
+                content: ev.prompt,
+                time: ev.timestamp || new Date().toISOString()
+              });
+              if (ev.decision === 'BLOCK') {
+                map[sid].messages.push({
+                  role: 'blocked',
+                  content: ev.prompt,
+                  risk_score: ev.risk_score || 100,
+                  reasoning: ev.reasoning || 'Prompt injection detected.',
+                  breakdown: ev.agent_breakdown || {},
+                  time: ev.timestamp || new Date().toISOString()
+                });
+              }
+            }
+          }
+          state.chatSessions = Object.values(map);
+          saveSessionsToStorage();
+        }
+      } catch {}
+    }
 
-    main.innerHTML = `
-      <div class="settings-area">
-        <div style="font-size:18px;font-weight:700;margin-bottom:20px;letter-spacing:-0.3px">Settings & Configuration</div>
-
-        <div class="settings-section">
-          <div class="settings-section-title">Gateway Status</div>
-          <div class="settings-row">
-            <span class="settings-key">Status</span>
-            <span class="settings-value">${health.status === 'ok' ? '✅ Online' : '❌ Offline'}</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-key">Uptime</span>
-            <span class="settings-value">${health.uptime_sec ? formatUptime(health.uptime_sec) : '—'}</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-key">Service</span>
-            <span class="settings-value">${health.service || 'AI Security Gateway'}</span>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-title">Detection Engine</div>
-          <div class="settings-row">
-            <span class="settings-key">ML Model</span>
-            <span class="settings-value monospace">deberta-v3-base-prompt-injection-v2</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-key">Pattern Rules</span>
-            <span class="settings-value">${rules.rules?.length ?? 0} rules loaded</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-key">Judge Consensus</span>
-            <span class="settings-value">Multi-agent (3 engines)</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-key">Detection Device</span>
-            <span class="settings-value monospace">CPU</span>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-title">Security Features</div>
-          <div class="settings-row"><span class="settings-key">Canary Tokens</span><span class="settings-value">✅ Active</span></div>
-          <div class="settings-row"><span class="settings-key">Response DLP Guard</span><span class="settings-value">✅ Active</span></div>
-          <div class="settings-row"><span class="settings-key">RAG Poisoning Scanner</span><span class="settings-value">✅ Active</span></div>
-          <div class="settings-row"><span class="settings-key">Stream Circuit Breaker</span><span class="settings-value">✅ Active</span></div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-title">Project Info</div>
-          <div class="settings-row"><span class="settings-key">Course</span><span class="settings-value">B.Tech Minor Project IT401</span></div>
-          <div class="settings-row"><span class="settings-key">Group</span><span class="settings-value">Group 138 · DTU</span></div>
-          <div class="settings-row"><span class="settings-key">Supervisor</span><span class="settings-value">Dr. Akshay Mool</span></div>
-          <div class="settings-row"><span class="settings-key">Version</span><span class="settings-value monospace">v1.0.0</span></div>
-        </div>
-      </div>
-    `;
+    // If there is an existing session, restore it
+    if (state.chatSessions.length > 0) {
+      const first = state.chatSessions[0];
+      state.sessionId = first.id;
+      state.messages = (first.messages || []).map(m => ({ ...m }));
+      state.threatCount = state.messages.filter(m => m.role === 'blocked').length;
+    }
   }
 
-  /* ── Shared formatters ──────────────────────────────────── */
+  function saveSessionsToStorage() {
+    try {
+      localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(state.chatSessions));
+    } catch {}
+  }
+
+  function startNewChat() {
+    state.sessionId = `sess-${Math.random().toString(36).slice(2, 10)}`;
+    state.messages = [];
+    state.threatCount = 0;
+    navigate('chat');
+    renderChatHistory();
+  }
+
+  function selectSession(sessId) {
+    const s = state.chatSessions.find(item => item.id === sessId);
+    if (!s) return;
+    state.sessionId = s.id;
+    state.messages = (s.messages || []).map(m => ({ ...m }));
+    state.threatCount = state.messages.filter(m => m.role === 'blocked').length;
+    navigate('chat');
+    renderChatHistory();
+  }
+
+  function deleteSession(e, sessId) {
+    if (e) e.stopPropagation();
+    state.chatSessions = state.chatSessions.filter(item => item.id !== sessId);
+    saveSessionsToStorage();
+    if (state.sessionId === sessId) {
+      startNewChat();
+    } else {
+      renderChatHistory();
+    }
+  }
+
+  function updateCurrentSession(firstUserText = null) {
+    let sess = state.chatSessions.find(item => item.id === state.sessionId);
+    if (!sess) {
+      const titleText = firstUserText || (state.messages.find(m => m.role === 'user')?.content) || 'New Conversation';
+      sess = {
+        id: state.sessionId,
+        title: truncate(titleText.replace(/[\r\n]+/g, ' '), 30),
+        lastUpdated: new Date().toISOString(),
+        messages: state.messages.map(m => ({ ...m }))
+      };
+      state.chatSessions.unshift(sess);
+    } else {
+      if (firstUserText && (!sess.title || sess.title === 'New Conversation' || sess.title === 'Conversation')) {
+        sess.title = truncate(firstUserText.replace(/[\r\n]+/g, ' '), 30);
+      }
+      sess.lastUpdated = new Date().toISOString();
+      sess.messages = state.messages.map(m => ({ ...m }));
+      // Move to top of session list
+      state.chatSessions = [
+        sess,
+        ...state.chatSessions.filter(item => item.id !== state.sessionId)
+      ];
+    }
+    saveSessionsToStorage();
+    renderChatHistory();
+  }
+
+  function renderChatHistory() {
+    const container = document.getElementById('sidebar-chat-history');
+    if (!container) return;
+
+    if (!state.chatSessions || state.chatSessions.length === 0) {
+      container.innerHTML = `
+        <div class="chat-history-empty">
+          <span>No chats yet</span>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = state.chatSessions.map(sess => {
+      const isActive = sess.id === state.sessionId;
+      const count = (sess.messages || []).length;
+      return `
+        <div class="chat-history-item ${isActive ? 'active' : ''}" onclick="Sentinel.selectSession('${sess.id}')" title="${sess.id}">
+          <div class="chat-history-content">
+            <span class="chat-history-title">${escHtml(sess.title || 'Conversation')}</span>
+            <span class="chat-history-meta">${timeAgo(sess.lastUpdated)} · ${count} msg${count !== 1 ? 's' : ''}</span>
+          </div>
+          <button class="chat-history-delete" onclick="Sentinel.deleteSession(event, '${sess.id}')" title="Delete chat">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M3 4h10M6 4V2h4v2M5 4v9a1 1 0 001 1h4a1 1 0 001-1V4"/>
+            </svg>
+          </button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  /* ── Shared formatters & utils ──────────────────────────── */
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   function formatTime(isoStr) {
     if (!isoStr) return '—';
     try {
@@ -197,7 +286,7 @@ const Sentinel = (() => {
   function timeAgo(isoStr) {
     try {
       const diff = (Date.now() - new Date(isoStr)) / 1000;
-      if (diff < 60) return `${Math.round(diff)}s ago`;
+      if (diff < 60) return `just now`;
       if (diff < 3600) return `${Math.round(diff/60)}m ago`;
       if (diff < 86400) return `${Math.round(diff/3600)}h ago`;
       return `${Math.round(diff/86400)}d ago`;
@@ -207,20 +296,23 @@ const Sentinel = (() => {
   /* ── Init ───────────────────────────────────────────────── */
   async function init() {
     wireNav();
+    await loadSessionsFromStorage();
+    renderChatHistory();
+
     // Check health & update sidebar status
     try {
       const h = await api.get('/health');
       const dot  = document.querySelector('.sidebar-footer .dot');
       const text = document.getElementById('sidebar-status');
       if (h.status === 'ok') {
-        dot.className  = 'dot dot-green';
-        text.textContent = 'Gateway Online';
+        if (dot) dot.className = 'dot dot-green';
+        if (text) text.textContent = 'Gateway Online';
       }
     } catch {
       const dot  = document.querySelector('.sidebar-footer .dot');
       const text = document.getElementById('sidebar-status');
-      dot.className = 'dot dot-red';
-      text.textContent = 'Gateway Offline';
+      if (dot) dot.className = 'dot dot-red';
+      if (text) text.textContent = 'Gateway Offline';
     }
     navigate('dashboard');
   }
@@ -228,7 +320,8 @@ const Sentinel = (() => {
   /* ── Public API ─────────────────────────────────────────── */
   return {
     init, navigate, toast, api, state,
-    formatTime, formatDate, formatUptime, scoreClass, truncate, timeAgo,
+    startNewChat, selectSession, deleteSession, updateCurrentSession, renderChatHistory,
+    formatTime, formatDate, formatUptime, scoreClass, truncate, timeAgo, escHtml,
   };
 
 })();

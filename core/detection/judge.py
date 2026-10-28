@@ -83,8 +83,9 @@ class JudgeAgent:
 
         # Short-prompt imperative uncertainty check (prompts <= 15 words containing extraction/security terms)
         words = inspected_prompt.split()
-        is_short_suspicious = (len(words) <= 15) and any(
-            w in inspected_prompt.lower() for w in ["jailbreak", "bypass", "sorce", "source", "system", "prompt", "override", "code"]
+        is_short_suspicious = (len(words) <= 15) and (
+            any(w in inspected_prompt.lower() for w in ["jailbreak", "bypass", "sorce", "override"]) or
+            bool(re.search(r"\b(source\s*code|backend\s*code|system\s*prompt|secret\s*prompt|base\s*prompt|raw\s*prompt|dump\s*instructions?)\b", inspected_prompt, re.I))
         )
 
         # Gating Criteria:

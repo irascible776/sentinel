@@ -106,9 +106,15 @@ class PatternHunter:
         matched_ids: List[str] = []
         pattern_score = 0.0
 
-        # Inspect decoded Base64 text if present
+        # Include original, normalized, and decoded Base64 text targets
+        from core.detection.normalizer import normalize_text
+        normalized_prompt = normalize_text(prompt)
+
         decoded_payloads = self.extract_and_decode_base64(prompt)
-        text_targets = [prompt] + decoded_payloads
+        text_targets = [prompt]
+        if normalized_prompt and normalized_prompt != prompt:
+            text_targets.append(normalized_prompt)
+        text_targets.extend(decoded_payloads)
 
         for text in text_targets:
             for rule, regex in self._compiled_rules:

@@ -5,6 +5,7 @@ Computes weighted composite risk, enforces high-severity overrides,
 and synthesizes natural-language explainable reasoning.
 """
 
+import re
 import time
 from typing import Dict, List, Any, Optional
 
@@ -73,12 +74,26 @@ class JudgeAgent:
         escalation_detected = behavioral_res.get("escalation_detected", False)
 
         # Step 3.5: Stage 2 Online Deep Arbiter (Cascaded Heterogeneous Filter)
+        # Tripwire check for explicit security keywords:
+        TRIPWIRE_RE = re.compile(
+            r"(?i)\b(jail\s*-?\s*break|bypass|override|disable\s+(safety|guardrails?|filters?)|"
+            r"reveal\s+(system\s*prompt|source\s*code)|developer\s*mode|dan\s*mode)\b"
+        )
+        is_tripwire = bool(TRIPWIRE_RE.search(inspected_prompt) or TRIPWIRE_RE.search(prompt))
+
+        # Short-prompt imperative uncertainty check (prompts <= 15 words containing extraction/security terms)
+        words = inspected_prompt.split()
+        is_short_suspicious = (len(words) <= 15) and any(
+            w in inspected_prompt.lower() for w in ["jailbreak", "bypass", "sorce", "source", "system", "prompt", "override", "code"]
+        )
+
         # Gating Criteria:
-        # Invoke Stage 2 whenever semantic score is elevated (s_score >= 35.0) OR agent discrepancy exists,
-        # unless already conclusively decided by Tier 1 high-confidence regex (p_score >= 95.0)
-        # or Tier 2 corroborated regex+semantic block (s_score >= 85.0 and p_score >= 40.0).
+        # Invoke Stage 2 whenever semantic score is elevated (s_score >= 35.0), agent discrepancy exists,
+        # or any sensitive keyword tripwire / short suspicious prompt is detected.
         is_already_decided = (p_score >= 95.0) or (s_score >= 85.0 and p_score >= 40.0)
-        is_discrepancy_or_elevated = (s_score >= 35.0) or (p_score >= 50.0) or (b_score >= 50.0)
+        is_discrepancy_or_elevated = (
+            (s_score >= 35.0) or (p_score >= 45.0) or (b_score >= 50.0) or is_tripwire or is_short_suspicious
+        )
 
         stage2_data: Dict[str, Any] = {
             "invoked": False,
@@ -97,8 +112,8 @@ class JudgeAgent:
         composite_risk = (0.25 * p_score) + (0.50 * s_score) + (0.25 * b_score)
 
         # High-Confidence Corroborated Guardrails:
-        # Tier 1: Deterministic High-Confidence Signature Match (DAN, Canary, System Override)
-        if p_score >= 95.0:
+        # Tier 1: Deterministic High-Confidence Signature Match (DAN, Canary, System Override, Direct Jailbreak)
+        if p_score >= 80.0:
             composite_risk = max(composite_risk, 85.0)
 
         # Tier 2: Corroborated Semantic Escalation (High Semantic + Structural Evidence)
@@ -131,8 +146,8 @@ class JudgeAgent:
 
             if s2_fallback:
                 # Fallback on timeout or API failure:
-                # If initial DeBERTa score was high (s_score >= 85), fail-closed to BLOCK
-                if s_score >= 85.0:
+                # If initial DeBERTa score was high, pattern matched, or tripwire fired, fail-closed to BLOCK
+                if s_score >= 85.0 or p_score >= 80.0 or is_tripwire:
                     composite_risk = max(composite_risk, 80.0)
                 else:
                     composite_risk = max(composite_risk, 45.0)

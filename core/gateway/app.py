@@ -34,6 +34,11 @@ async def lifespan(app: FastAPI):
     init_db()
     # Initialize global async HTTP client
     app.state.http_client = httpx.AsyncClient(timeout=30.0)
+    # Warmup detection engine (pre-loads DeBERTa model weights, tokenizer, and JIT into RAM)
+    try:
+        await asyncio.to_thread(judge.evaluate, "Warmup Sentinel gateway initialization", "sess-warmup")
+    except Exception:
+        pass
     yield
     # Cleanup on shutdown
     await app.state.http_client.aclose()
@@ -121,22 +126,36 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
             timeout=10.0
         )
     except asyncio.TimeoutError:
+        fast_scan = judge.pattern_hunter.scan(user_text)
         verdict = {
-            "decision": "FLAG",
-            "risk_score": 45.0,
+            "decision": "BLOCK",
+            "risk_score": 85.0,
             "confidence": 0.5,
-            "agent_breakdown": {},
-            "matched_signatures": [],
-            "reasoning": "Detection engine evaluation timeout; defaulted to FLAG for audit."
+            "agent_breakdown": {
+                "pattern_hunter_score": fast_scan.get("score", 0.0),
+                "semantic_analyst_score": None,
+                "behavioral_profiler_score": 0.0,
+                "stage2_arbiter_score": None,
+                "stage2_invoked": False,
+            },
+            "matched_signatures": fast_scan.get("matched_signatures", []),
+            "reasoning": "Perimeter security timeout: Request failed verification within SLA budget (Fail-Secure Policy Enforced)."
         }
     except Exception as e:
+        fast_scan = judge.pattern_hunter.scan(user_text)
         verdict = {
-            "decision": "FLAG",
-            "risk_score": 45.0,
+            "decision": "BLOCK",
+            "risk_score": 85.0,
             "confidence": 0.5,
-            "agent_breakdown": {},
-            "matched_signatures": [],
-            "reasoning": f"Detection engine encountered error ({str(e)}); defaulted to FLAG."
+            "agent_breakdown": {
+                "pattern_hunter_score": fast_scan.get("score", 0.0),
+                "semantic_analyst_score": None,
+                "behavioral_profiler_score": 0.0,
+                "stage2_arbiter_score": None,
+                "stage2_invoked": False,
+            },
+            "matched_signatures": fast_scan.get("matched_signatures", []),
+            "reasoning": f"Detection engine encountered error ({str(e)}). Request blocked under fail-secure policy."
         }
     
     request_id = f"req-{uuid.uuid4().hex[:12]}"

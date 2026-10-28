@@ -1,6 +1,6 @@
 {
-  "version": "1.2.0",
-  "updated_at": "2026-10-08T04:48:09.086840+00:00",
+  "version": "1.3.0",
+  "updated_at": "2026-10-28T09:10:00.000000+00:00",
   "rules": [
     {
       "id": "SIG-001",
@@ -25,8 +25,8 @@
     },
     {
       "id": "SIG-004",
-      "name": "Roleplay Configuration Exfiltration",
-      "pattern": "(?i)(pretend\\s+to\\s+be\\s+an?\\s+unfiltered|simulate\\s+a\\s+terminal\\s+with\\s+root|roleplaying\\s+as\\s+a\\s+jailbroken)",
+      "name": "Roleplay & Penetration Tester Simulation",
+      "pattern": "(?i)(pretend\\s+to\\s+be(\\s+an?\\s+unfiltered)?|simulate\\s+(a|an)?\\s*(terminal|environment|simulation)|in\\s+a\\s+fictional\\s+simulation|with\\s+no\\s+safety\\s+(guidelines|protocols|rules)|roleplaying\\s+as(\\s+a\\s+jailbroken)?|penetration\\s+tester\\b)",
       "severity": "MEDIUM",
       "weight": 75
     },
@@ -43,6 +43,27 @@
       "pattern": "(?i)(secret\\s+canary\\s+token|reveal\\s+confidential\\s+key|dump\\s+canary|master\\s+api\\s+keys)",
       "severity": "HIGH",
       "weight": 85
+    },
+    {
+      "id": "SIG-007",
+      "name": "Direct Jailbreak & Intent Action",
+      "pattern": "(?i)\\b(jail\\s*-?\\s*break|bypass|override|disable|unlock|defeat|circumvent)\\b.{0,40}\\b(source\\s*code|system\\s*prompt|instructions?|guardrails?|safety|filters?|restrictions?|rules|polic(?:y|ies)|code)\\b",
+      "severity": "HIGH",
+      "weight": 85
+    },
+    {
+      "id": "SIG-008",
+      "name": "Direct Target Extraction",
+      "pattern": "(?i)\\b(reveal|leak|dump|print|show|expose|extract|give\\s+me)\\b.{0,30}\\b(your|the|ur)\\b.{0,20}\\b(system\\s*prompt|hidden\\s*prompt|instructions?|source\\s*code)\\b",
+      "severity": "HIGH",
+      "weight": 80
+    },
+    {
+      "id": "SIG-009",
+      "name": "Jailbreak Term Tripwire",
+      "pattern": "(?i)\\b(jail\\s*-?\\s*break(?:ing|er|ed|s)?|dan\\s+mode|developer\\s+mode)\\b",
+      "severity": "MEDIUM",
+      "weight": 60
     },
     {
       "id": "AUTO-64F0ED",

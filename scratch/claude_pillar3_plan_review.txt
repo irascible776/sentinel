@@ -1,0 +1,65 @@
+# Architectural Plan Peer-Review Request: Pillar III (Vision & Document Threat Engine)
+**Target System:** Sentinel AI Security Gateway (`/home/utkarsh/Desktop/sentinel/sentinel`)  
+**Evaluator:** Principal AI Safety Systems Architect & Adversarial Red-Team Reviewer (Claude via ai-helper)  
+**Objective:** Conduct rigorous adversarial critique and peer review of the completed Pillar III architectural plan (`sentinel/docs/pillar-3-plan/`).
+
+---
+
+### Architecture Plan Overview Under Review
+
+We have formulated the complete architectural plan in `sentinel/docs/pillar-3-plan/` based on your initial recommendations:
+
+1. **`01_model_selection_and_semantic_vision.md`**:
+   - Model: `MobileCLIP-S0` image-tower only (<50MB RAM, Apple Silicon Metal GPU `mps` / CPU).
+   - Concept Taxonomy: Prompt-ensembled threat concepts (Weapons, Explosives/CBRN, Violence/Gore, Contraband, Lockpicking/Bypass, Jailbreak Framing) and benign anchors (Invoices, Code Screenshots, Architecture Diagrams, Financial Charts, Slide Decks, Natural Photos, Typography).
+   - Precomputed Concept Bank: Text tower executed offline; embeddings averaged, L2-normalized, serialized to `concept_bank.pt`. Zero runtime text-encoder overhead.
+   - Margin-Against-Benign Formulation:
+     $$\text{Margin}(I, c) = \cos(\mathbf{e}_I, \mathbf{e}_c) - \max_{b \in \text{Benign}} \cos(\mathbf{e}_I, \mathbf{e}_b)$$
+     $$\text{RiskScore} = \text{clamp}\left( \frac{\max_c \text{Margin}(I, c) - 0.05}{0.28 - 0.05} \times 100.0, \; 0.0, \; 100.0 \right)$$
+
+2. **`02_ocr_and_visual_prompt_injection.md`**:
+   - Preprocessing: Grayscale -> CLAHE (clip=2.5, tile=8x8) -> Adaptive Otsu/Gaussian thresholding -> 3x3 Morphological Close -> Deskewing (-45° to +45°) -> 2x Bicubic Upscaling for small text regions (<20px).
+   - Two-Stage Fast Path: Lightweight gradient/stroke-width variance gate; pure visual images/photos bypass OCR entirely to guarantee <50ms latency.
+   - Resilient OCR Factory: Capability probe (`EasyOCR` -> `Tesseract` -> `MockOCRDriver` for 100% green CI without system binaries).
+   - Pipeline Reuse Invariant: Extracted OCR text is routed directly through Sentinel's existing Ingress pipeline (Normalizer + PatternHunter + DeBERTa-v3 Channel A + IntentClassifier Channel B + Stage 2 Arbiter).
+
+3. **`03_srm_filter_and_steganography.md`**:
+   - SRM Filter Bank: Fixed `nn.Conv2d` layer (requires_grad=False) with 10 residual kernels (1st-order diff, 2nd-order Laplacian, KV 5x5, Square 3x3/5x5) and quantize-and-truncate $[-3, 3]$.
+   - Edge-Residual Correlation ($C_{\text{edge}}$): Pearson correlation between Sobel gradient $G$ and SRM residual $|R|$. Benign text has high correlation ($C \ge 0.65$); global PGD noise has low correlation ($C < 0.35$).
+   - Flat-Region Residual Leakage ($L_{\text{flat}}$): Measures residual variance strictly inside content-flat regions ($G < \tau_{\text{grad}}$). Benign margins have zero leakage; PGD/FGSM perturbations exhibit high leakage.
+   - LSB Bit-Plane Chi-Square Test: Standalone Westfeld & Pfitzmann $\chi^2$ test across 128 Pairs of Values (PoVs) for LSB steganography ($p > 0.999 \implies$ Layer-1 `BLOCK`).
+
+4. **`04_document_threat_parser.md`**:
+   - Backends: PyMuPDF (`fitz`) for PDF, `python-docx` for DOCX.
+   - 5 Hidden-Text Oracles:
+     1. PDF Render Mode == 3 (spec-defined invisible text) with injection keywords.
+     2. Perceptual color distance $\Delta E_{2000}(\text{font}, \text{bg}) \le 4.5$ on text $> 10$ chars.
+     3. Microscopic font size $\le 1.5$pt or $< 0.15 \times$ median page font.
+     4. Off-canvas coordinates (intersection area with `CropBox` == 0).
+     5. DOCX OOXML `<w:vanish>` attribute inspection.
+   - Embedded raster images extracted and routed to MobileCLIP + SRM.
+   - Max-Plus-Mean Rollup: $R_{\text{doc}} = \min(100, \max_{p} R_p + \frac{0.15}{|P|} \sum_p R_p)$.
+
+5. **`05_consensus_judge_and_redaction.md`**:
+   - Corroboration-Gated Consensus (anti-linear-sum):
+     * Layer 1 Deterministic Oracles (Canary hit, SIG-001/002 regex, render-mode 3, LSB chi-square) $\implies$ Immediate `BLOCK`.
+     * Layer 2 Soft Signals: Solo elevated soft channel is capped at `FLAG` (request allowed, logged to SOC).
+     * $\ge 2$ Corroborating soft channels, or single channel $\ge 92.0 \implies$ `BLOCK`.
+   - Spatially Localized Redaction (`REDACT_IMAGE`): Solid opaque mask (`#1E1E1E` with audit stamp `[REDACTED: POLICY VIOLATION]`), rejecting reversible blur and hallucinating inpainting.
+   - Benign Enterprise Regression Gate: Zero-false-positive validation gate against enterprise test corpus.
+
+6. **`06_api_and_dashboard_integration.md`**:
+   - Endpoints: `POST /api/v1/scan-image` (32MB streaming cap), `POST /api/v1/scan-document`.
+   - Multimodal hook in `/v1/chat/completions` and `/api/v1/inspect`.
+   - SQLite WAL async audit logging with agent breakdowns and forensic signatures.
+   - SOC Dashboard Tab 10 with interactive inspection, redaction comparison, and radar telemetry.
+
+---
+
+### Specific Peer-Review Questions
+
+1. **Adversarial Bypass & Blindspots:** Are there any known evasion techniques (e.g. low-frequency adversarial warps, color-space manifold shifts, typographic homoglyphs in visual text, or polyglot document tricks) that could slip through this architecture?
+2. **False-Positive Risk on Complex Enterprise Documents:** Are the mathematical thresholds for benign-anchor margin ($\tau=0.05, 0.28$), flat-region leakage, and $\Delta E_{2000} \le 4.5$ sufficiently calibrated for real-world enterprise assets (dark mode IDE screenshots, scanned faded receipts, colored presentation slides)?
+3. **Redaction Trust Boundary:** When `REDACT_IMAGE` modifies the image, are there any security implications regarding metadata retention (EXIF, IPTC, XMP), image re-encoding artifacts, or partial coordinate leaks?
+4. **Final Recommendation:** Do you approve this architecture for modular implementation under `core/vision/`, and are there any final refinements you recommend before we start coding?
+

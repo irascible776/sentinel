@@ -60,10 +60,14 @@ class BehavioralProfiler:
         self,
         session_id: str = "default",
         prompt: str = "",
-        preliminary_risk: float = 0.0
+        preliminary_risk: float = 0.0,
+        messages: Optional[List[Dict[str, str]]] = None,
+        is_audit: bool = False
     ) -> Dict[str, Any]:
         """
         Thread-safe recording and evaluation of session behavioral risk with monotonic exponential decay.
+        Consumes multi-turn messages to reconstruct session history if session_id is freshly diverged.
+        Strictly gated to authorized audit traffic (is_audit=True) and preserves true prior node scores.
         """
         t0 = time.perf_counter()
         now = time.monotonic()
@@ -71,6 +75,33 @@ class BehavioralProfiler:
         with self._lock:
             self._periodic_global_cleanup(now)
             active_records = self._prune_session(session_id, now)
+
+            # Trust Boundary & Fidelity: only authorized audit traffic (gated by is_audit / X-Sentinel-Audit)
+            # can seed historical session state, and must use genuine previous turn scores (not flat constants).
+            if is_audit and len(active_records) == 0 and messages:
+                user_msgs = [m for m in messages if m.get("role") == "user"]
+                # Extract strictly prior turns before the current prompt
+                if len(user_msgs) > 1 and user_msgs[-1].get("content") == prompt:
+                    prior_turns = user_msgs[:-1]
+                elif len(user_msgs) >= 1 and user_msgs[-1].get("content") != prompt:
+                    prior_turns = user_msgs
+                else:
+                    prior_turns = []
+
+                for idx, turn in enumerate(prior_turns):
+                    prior_p = turn.get("content", "")
+                    # Real target score from audit tree node if present
+                    if "_risk_score" in turn and turn["_risk_score"] is not None:
+                        real_score = float(turn["_risk_score"])
+                    else:
+                        real_score = 10.0
+
+                    t_offset = (len(prior_turns) - idx) * 3.0
+                    active_records.append({
+                        "timestamp": now - t_offset,
+                        "score": real_score,
+                        "prompt_len": len(prior_p)
+                    })
 
             # Baseline behavioral score
             behavioral_score = 5.0

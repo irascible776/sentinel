@@ -1,7 +1,43 @@
 {
-  "version": "1.3.0",
-  "updated_at": "2026-10-28T09:10:00.000000+00:00",
+  "version": "1.4.0",
+  "updated_at": "2026-10-28T06:00:00.000000+00:00",
   "rules": [
+    {
+      "id": "MAL-001",
+      "name": "Malware & Spyware Code Request",
+      "description": "Detects requests to write keyloggers, spyware, stalkerware, or credential-stealing software.",
+      "category": "APPLICATION_PLANE_ABUSE",
+      "pattern": "(?i)\\b(write|create|build|code|make|develop|generate|implement|script)\\b.{0,60}\\b(key\\s*logger|key\\s*logging|keystroke\\s*(logger|capture|recorder)|key\\s*capture|keyboard\\s*(hook|spy|logger)|spyware|stalkerware|screen\\s*(grabber|capture\\s*malware)|credential\\s*(stealer|harvester))\\b",
+      "severity": "CRITICAL",
+      "weight": 97
+    },
+    {
+      "id": "MAL-002",
+      "name": "Ransomware & Malware Dropper Request",
+      "description": "Detects requests to write ransomware, trojans, rootkits, malware droppers, or C2 beacons.",
+      "category": "APPLICATION_PLANE_ABUSE",
+      "pattern": "(?i)\\b(write|create|build|code|make|develop|generate|implement|script)\\b.{0,60}\\b(ransomware|ransom\\s+note\\s+encryptor|file\\s+encryptor.{0,20}ransom|trojan|rootkit|bootkit|malware\\s+(dropper|loader|stager)|c2\\s+beacon|command.{0,5}control\\s+beacon|backdoor.{0,30}malware|rat\\s+(payload|client))\\b",
+      "severity": "CRITICAL",
+      "weight": 97
+    },
+    {
+      "id": "SOC-001",
+      "name": "Phishing & Social Engineering Asset Request",
+      "description": "Detects requests to create phishing pages, credential harvesting forms, or social engineering email templates.",
+      "category": "APPLICATION_PLANE_ABUSE",
+      "pattern": "(?i)\\b(write|create|build|make|generate|craft|design)\\b.{0,80}\\b(phishing\\s+(email|page|site|template|kit|link)|credential\\s+(harvester|stealer|harvesting\\s+form|capture\\s+page)|fake\\s+(login\\s+page|bank\\s+page|paypal|microsoft|google)\\s+(clone|replica)|spear\\s+phishing|smishing\\s+template|vishing\\s+script)\\b",
+      "severity": "CRITICAL",
+      "weight": 95
+    },
+    {
+      "id": "EXP-001",
+      "name": "Exploit & Remote Access Weapon Request",
+      "description": "Detects requests to create reverse shells, exploit code, privilege escalation scripts, or network attack tools.",
+      "category": "APPLICATION_PLANE_ABUSE",
+      "pattern": "(?i)\\b(write|create|build|code|make|generate|implement|script|give\\s+me)\\b.{0,80}\\b(reverse\\s+shell|bind\\s+shell|meterpreter\\s+(payload|stager)|exploit\\s+(for|targeting)\\s+CVE|privilege\\s+escalation\\s+(script|exploit)|buffer\\s+overflow\\s+exploit|shellcode\\s+(for|targeting)|remote\\s+code\\s+execution\\s+exploit|sql\\s+injection\\s+(payload|exploit)|xss\\s+payload.{0,20}steal|ddos\\s+(tool|script|bot)|syn\\s+flood\\s+(script|tool))\\b",
+      "severity": "CRITICAL",
+      "weight": 95
+    },
     {
       "id": "SIG-001",
       "name": "Direct Instruction Override",

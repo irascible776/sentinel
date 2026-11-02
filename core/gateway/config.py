@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -8,6 +9,7 @@ class Settings(BaseSettings):
     GATEWAY_PORT: int = 8000
     GATEWAY_DEBUG: bool = True
     GATEWAY_ADMIN_KEY: str = "gw-admin-secret-key-dtu138"
+    REDTEAM_SERVICE_KEY: Optional[str] = None
 
     # Upstream LLM Configuration
     UPSTREAM_PROVIDER: str = "gemini"  # "gemini", "mock", "openai", "ollama"
@@ -22,9 +24,17 @@ class Settings(BaseSettings):
 
     # ML & Detection Engine Configuration
     HF_MODEL_NAME: str = "protectai/deberta-v3-base-prompt-injection-v2"
-    DETECTION_DEVICE: str = "cpu"
+    DETECTION_DEVICE: str = "auto"      # "auto" = detect MPS > CPU, "cuda", "mps", "cpu"
     SLIDING_WINDOW_MINUTES: int = 10
     THREAT_RULES_PATH: str = "core/detection/threat_rules.json"
+
+    # Stage 2 Arbiter Configuration (local GGUF takes priority over cloud APIs)
+    ARBITER_GGUF_PATH: str = ""          # Path to .gguf file (e.g., models/arbiter_gguf/Phi-3-mini-4k-instruct-Q4_K_M.gguf)
+    ARBITER_BACKEND: str = "auto"        # "auto" = local > groq > gemini, or force "local"/"groq"/"gemini"
+    GROQ_API_KEY: str = ""               # Optional cloud fallback if no GGUF available
+
+    # Channel B Intent Classifier
+    INTENT_MODEL_PATH: str = ""          # Optional: path to fine-tuned harm classifier model
 
     # Security Vectors & Canary Configuration
     CANARY_TOKEN_PREFIX: str = "CANARY-SECRET-"

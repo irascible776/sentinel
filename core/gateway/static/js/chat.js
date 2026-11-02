@@ -197,9 +197,12 @@ const SentinelChat = (() => {
     } else if (msg.role === 'blocked') {
       el.className = 'msg ai';
       const bd = msg.breakdown || {};
-      // Backend returns flat scores: pattern_hunter_score, semantic_analyst_score, behavioral_profiler_score
+      // Backend returns flat scores: pattern_hunter_score, semantic_analyst_score, intent_classifier_score, behavioral_profiler_score, stage2_arbiter_score
       const patternScore  = bd.pattern_hunter_score  ?? null;
       const semanticScore = bd.semantic_analyst_score ?? null;
+      const intentScore   = bd.intent_classifier_score ?? null;
+      const stage2Score   = bd.stage2_arbiter_score ?? null;
+      const stage2Invoked = bd.stage2_invoked ?? false;
       const sigs = (msg.sigs || []).slice(0, 3).map(s =>
         `<span class="badge badge-block" style="font-size:10px">${escHtml(s)}</span>`).join('');
       el.innerHTML = `
@@ -213,7 +216,7 @@ const SentinelChat = (() => {
             <svg style="width:15px;height:15px;flex-shrink:0" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
             </svg>
-            BLOCKED — Prompt Injection Detected
+            BLOCKED — Attack Detected
           </div>
           <div class="blocked-detail">
             ${escHtml(msg.reasoning || 'This request was identified as a prompt injection attack.')}
@@ -222,6 +225,8 @@ const SentinelChat = (() => {
             <span class="badge badge-block">Risk: ${msg.risk_score?.toFixed?.(1) ?? '—'}%</span>
             ${patternScore !== null ? `<span class="badge badge-${patternScore >= 50 ? 'block' : 'safe'}">Pattern: ${patternScore.toFixed(0)}%</span>` : ''}
             ${semanticScore !== null ? `<span class="badge badge-${semanticScore >= 50 ? 'block' : 'safe'}">DeBERTa: ${semanticScore.toFixed(0)}%</span>` : ''}
+            ${intentScore !== null ? `<span class="badge badge-${intentScore >= 50 ? 'block' : 'safe'}">Intent: ${intentScore.toFixed(0)}%</span>` : ''}
+            ${stage2Invoked && stage2Score !== null ? `<span class="badge badge-${stage2Score >= 50 ? 'block' : 'safe'}">Stage 2: ${stage2Score.toFixed(0)}%</span>` : ''}
             <span class="badge badge-block">Judge: BLOCK</span>
           </div>
           ${sigs ? `<div class="blocked-meta" style="margin-top:6px">${sigs}</div>` : ''}
@@ -331,21 +336,28 @@ const SentinelChat = (() => {
     if (lastBlocked) {
       const bd = lastBlocked.breakdown || {};
       // Backend returns flat numeric scores from JudgeAgent
-      const deberta     = bd.semantic_analyst_score  ?? 0;
-      const patternPct  = bd.pattern_hunter_score    ?? 0;
+      const deberta     = bd.semantic_analyst_score    ?? 0;
+      const patternPct  = bd.pattern_hunter_score      ?? 0;
+      const intentPct   = bd.intent_classifier_score   ?? 0;
       const behavPct    = bd.behavioral_profiler_score ?? 0;
+      const s2Score     = bd.stage2_arbiter_score;
+      const s2Inv       = bd.stage2_invoked ?? false;
+      const category    = bd.intent_category || 'INJECTION';
+
       lastDetectionHTML = `
         <div class="last-detection-card" style="margin-bottom:10px">
-          <div class="detection-type">Injection Detected</div>
+          <div class="detection-type">${escHtml(category.replace(/_/g, ' '))} Detected</div>
           <div class="detection-detail">
             Risk Score: ${lastBlocked.risk_score?.toFixed?.(1) ?? '—'}%<br>
             Engine: Multi-Agent Consensus
           </div>
         </div>
         <div class="panel-section-title" style="margin-bottom:8px">DETECTION BREAKDOWN</div>
-        ${breakdownBar('DeBERTa Score',   deberta.toFixed(0),    deberta,    '#dc2626')}
-        ${breakdownBar('Pattern Hunter',  patternPct.toFixed(0), patternPct, '#f59e0b')}
-        ${breakdownBar('Behavioral',      behavPct.toFixed(0),   behavPct,   '#7c3aed')}
+        ${breakdownBar('DeBERTa (Ch A)',   deberta.toFixed(0),    deberta,    '#dc2626')}
+        ${breakdownBar('Intent (Ch B)',    intentPct.toFixed(0),  intentPct,  '#06b6d4')}
+        ${breakdownBar('Pattern Hunter',   patternPct.toFixed(0), patternPct, '#f59e0b')}
+        ${breakdownBar('Behavioral',       behavPct.toFixed(0),   behavPct,   '#7c3aed')}
+        ${s2Inv && s2Score !== null && s2Score !== undefined ? breakdownBar('Stage 2 GGUF', Number(s2Score).toFixed(0), Number(s2Score), '#ec4899') : ''}
         ${breakdownBadge('Judge Consensus', 'BLOCK', true)}
       `;
     }

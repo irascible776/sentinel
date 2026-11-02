@@ -1,0 +1,78 @@
+# Architectural Consultation Request: Sentinel AI Security Gateway (v2.0)
+## Pillar V: Automated Adversarial Robustness & Security Auditing Engine
+**Target System:** Sentinel AI Security Gateway  
+**Evaluator/Consultant:** Principal AI Safety Systems Architect (Claude via ai-helper)  
+**Objective:** Provide authoritative review and final architectural recommendations on model selection, hardware constraints (M1 Air unified memory), multi-agent search algorithms, and closed-loop self-hardening.
+
+---
+
+### 1. Project Baseline & Current Stack State (114/114 Pytest Passing)
+Sentinel is an enterprise-grade AI Security Gateway built with FastAPI, SQLite WAL, and a Streamlit SOC Dashboard. Its current components are:
+1. **Core Ingress Inspection Ensemble:**
+   - Pattern Hunter (deterministic regex / signatures)
+   - Semantic Analyst (local fine-tuned DeBERTa-v3 sequence classifier)
+   - Behavioral Profiler (sliding-window multi-turn session tracking)
+   - Stage-2 Arbiter (`stage2_arbiter.py`): Lazy-loaded `meta-llama/llama-guard-3-8b` via Groq API or local GGUF (`Llama-3.2-1B` or `Phi-3 Mini` via `llama-cpp-python` with Apple Metal GPU acceleration).
+   - Consensus Judge (0.25 Pattern + 0.50 Semantic + 0.25 Behavioral).
+2. **Security Vectors & Resilience Add-ons:**
+   - Canary Token Engine (system-prompt honeytokens, exfiltration detection).
+   - Stream Circuit Breaker, DLP scanner, RAG sliding-window scanner.
+   - Threat Intelligence Feed (`threat_feed.py`): Clusters blocked prompts using TF-IDF n-grams and auto-synthesizes regex signatures into `core/detection/threat_rules.json`.
+3. **Pillars Already Live:**
+   - Pillar I: Malware binary analysis (MalConv 1D-CNN + MalImg ResNet-18).
+   - Pillar II: Code security & AST scanner (Python AST taint tracker + secret scanner + GraphCodeBERT).
+   - Pillar IV: Agentic runtime tool guardrails (Multi-base IP canonicalizer + AST payload normalizer + local fine-tuned `Qwen2.5-Coder-0.5B` LoRA in `tool_guardrail.py`).
+4. **Pillar V Objective (Under Design):**
+   - Autonomous AI Red-Teaming & Application-Layer Robustness Engine.
+   - Evaluates whether target models (Sentinel local gateway, Ollama, vLLM, external HTTP APIs) can be steered into policy deviations, prompt injections, or unauthorized tool execution.
+   - Closed-loop self-hardening: When a successful evasion reaches score >= 85 against Sentinel, it feeds into `ThreatIntelligenceFeed` to synthesize a new regex signature into `threat_rules.json`.
+
+---
+
+### 2. Constraints & Discussion Points Between Architects
+
+#### Constraint A: Zero Reliance on External Cloud LLMs for Attack Generation
+- Must run self-contained locally without third-party chat APIs (OpenAI/Anthropic/Gemini) because consumer APIs refuse adversarial prompts and defeat the on-prem/air-gapped product requirement.
+
+#### Constraint B: Training vs Deployment Environments
+- **Training:** Google Colab (A100 / L4 GPUs, PyTorch, LoRA, Unsloth, ORPO/DPO/SFT). No resource limits during fine-tuning.
+- **Runtime Deployment:** Apple M1 MacBook Air (Unified Memory, 8GB or 16GB RAM, Metal GPU acceleration via `llama-cpp-python` with `GGML_METAL=on`).
+
+#### Constraint C: The Model Lineage Dilemma & Shared Inductive Bias
+- Initially, `Qwen2.5-1.5B` was considered for Pillar V's probe generator. BUT: Pillar IV already uses `Qwen2.5-Coder-0.5B`!
+- Next, `LLaMA-3.2` was considered. BUT: Stage-2 Arbiter already uses `Llama-3.2-1B` / `Llama-Guard-3-8B`!
+- Reusing Qwen or LLaMA creates an architectural flaw: an "evaluation echo chamber" where the attacker and defender share the exact same tokenization vocabulary and pre-training blind spots.
+- To maintain genuine adversarial independence, the attacker must come from a third, distinct lineage:
+  - Candidates: Google DeepMind (`Gemma-2-2B-IT` or `Gemma-2-9B-IT`), Hugging Face (`SmolLM2-1.7B-Instruct`), Mistral AI (`Mistral-7B-Instruct-v0.3`).
+
+#### Constraint D: Unified Memory Contention on M1 Air
+- Baseline macOS + display + FastAPI + Streamlit Dashboard overhead = ~4.2 GB.
+- Baseline Sentinel Stack (DeBERTa-v3 + Qwen-0.5B + GraphCodeBERT + MalConv/ResNet + Stage 2 Arbiter) = ~3.6 GB.
+- Total baseline before Pillar V = ~7.8 GB!
+- If Pillar V uses a 7B-9B model (e.g., Gemma-2-9B or Mistral-7B in Q4_K_M GGUF @ ~5.5 GB), total memory = ~13.3 GB.
+  - On an 8GB M1 Air: System crashes (OOM) or suffers extreme swap thrashing.
+  - On a 16GB M1 Air: Runs uncomfortably close to full capacity with minimal KV-cache headroom.
+- If Pillar V uses a 2B-3B model (e.g., `Gemma-2-2B-IT` in Q4_K_M GGUF @ ~1.5 GB), total memory = ~9.3 GB, which is safe with lazy loading and GC.
+
+---
+
+### 3. Consultation Questions for Claude
+
+1. **Model Selection & Lineage Independence:**
+   What is the optimal base model for Pillar V's local probe generator?
+   - Is a Colab-fine-tuned `Gemma-2-2B-IT` (2.6B params, 256k SentencePiece tokenizer, Google lineage) sufficiently capable for multi-turn adversarial mutations and structural framing?
+   - Or should we use a 7B–9B model (like `Gemma-2-9B-IT` or `Mistral-7B-v0.3`) paired with dynamic memory orchestration (unloading defensive models during an audit campaign)?
+
+2. **M1 Air Memory & Process Lifecycle:**
+   How should the model lifecycle be structured on M1 Air to balance multi-model coexistence without swap thrashing? (e.g., strict lazy-loading, Metal memory pooling, context clearing).
+
+3. **Multi-Turn Probing Algorithm & Compute Budget:**
+   Between PAIR (Prompt Automatic Iterative Refinement) and Guided-TAP (Tree of Attacks with Pruning), what exact branching factor ($B$) and depth ($D$) should be deployed on M1 Air to ensure audit campaigns finish within reasonable time limits?
+
+4. **Zero-False-Positive Self-Hardening Pipeline:**
+   How should the closed-loop auto-immunization pipeline bridge successful evasions to `ThreatIntelligenceFeed`? Specifically, how should the candidate regex be validated against benign enterprise traffic before committing to `threat_rules.json` to guarantee a 0.0% false positive rate?
+
+5. **Evaluative Judge Architecture:**
+   How should the Evaluative Judge be composed (combining deterministic heuristics + local neural classifier like DeBERTa-v3) to score responses objectively from 0.0 to 100.0 without relying on external cloud APIs?
+
+Please provide an in-depth, rigorous architectural response detailing your recommendations.

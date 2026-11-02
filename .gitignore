@@ -23,6 +23,17 @@ hf_cache/
 *.pth
 *.safetensors
 *.onnx
+*.gguf
+
+# Large model directories (transfer via USB/AirDrop or download scripts, NOT git)
+# - models/sentinel_deberta/    (737 MB fine-tuned DeBERTa)
+# - models/channel_b_intent/    (~250 MB Channel B classifier)
+# - models/arbiter_gguf/        (~800 MB – 2.2 GB GGUF arbiter)
+models/
+sentinel_model/
+*.zip
+*.tar.gz
+*.7z
 
 # Database and SQLite
 *.db

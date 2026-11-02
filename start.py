@@ -93,7 +93,7 @@ def main():
     print(f"🚀  Starting gateway   →  {GATEWAY_URL}")
     print(f"📊  Dashboard & Chat   →  {GATEWAY_URL}")
     print(f"🔍  API Inspector      →  {GATEWAY_URL}/docs")
-    print("\n    Press  Ctrl+C  to shut down.\n")
+    print("\n    Press  Ctrl+C  to shut down (or run: python stop.py from another terminal).\n")
 
     try:
         proc = subprocess.Popen(cmd, cwd=PROJECT_ROOT)

@@ -123,6 +123,15 @@ class PatternHunter:
                     rule_id = rule.get("id", "SIG-UNK")
                     weight = float(rule.get("weight", 80.0))
 
+                    # Pillar V Staging: SHADOW rules log for telemetry but do not increase blocking score
+                    if rule.get("mode") == "SHADOW":
+                        shadow_name = f"[SHADOW] {rule_name}"
+                        if shadow_name not in matched_signatures:
+                            matched_signatures.append(shadow_name)
+                        if rule_id not in matched_ids:
+                            matched_ids.append(rule_id)
+                        continue
+
                     if rule_name not in matched_signatures:
                         matched_signatures.append(rule_name)
                     if rule_id not in matched_ids:

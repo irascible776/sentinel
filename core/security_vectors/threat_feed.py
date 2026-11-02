@@ -161,3 +161,25 @@ class ThreatIntelligenceFeed:
             "extracted_phrases": extracted_phrases,
             "message": f"Successfully updated threat rules with {len(added_rules)} new signature(s)."
         }
+
+    def promote_shadow_rule(self, rule_id: str) -> bool:
+        """Promotes a Pillar-V synthesized shadow rule to ENFORCE active blocking."""
+        rules_data = self.load_existing_rules()
+        existing_rules = rules_data.get("rules", [])
+        found = False
+        for r in existing_rules:
+            if r.get("id") == rule_id:
+                r["mode"] = "ENFORCE"
+                r["promoted_at"] = datetime.now(timezone.utc).isoformat()
+                found = True
+                break
+
+        if found:
+            rules_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            temp_path = f"{self.rules_path}.tmp"
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(rules_data, f, indent=2)
+            os.replace(temp_path, self.rules_path)
+            return True
+        return False
+

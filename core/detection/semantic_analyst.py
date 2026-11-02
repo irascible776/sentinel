@@ -31,13 +31,23 @@ class SemanticAnalyst:
                 model_name = os.path.abspath(candidate)
 
         self.model_name = model_name or "models/sentinel_deberta"
-        # Determine device (cpu, cuda, or mps for Apple Silicon)
+        # Determine device: cuda > mps (Apple Silicon Metal) > cpu
         if device is None:
-            configured_device = os.getenv("DETECTION_DEVICE", "cpu").lower()
+            configured_device = os.getenv("DETECTION_DEVICE", "auto").lower()
             if configured_device == "cuda":
                 device = "cuda"
+            elif configured_device == "mps":
+                device = "mps"
             else:
-                device = "cpu"
+                # Auto-detect: use Apple Metal GPU if available (M1/M2/M3 Mac)
+                try:
+                    import torch
+                    if torch.backends.mps.is_available():
+                        device = "mps"
+                    else:
+                        device = "cpu"
+                except Exception:
+                    device = "cpu"
         self.device = device
         self._classifier = None
         self._model_load_failed = False
